@@ -10,12 +10,12 @@ enum RtmpHeaderState
     RtmpHeaderState_Error,
 };
 
-struct ChuckBasicHeader
+struct ChunkBasicHeader
 {
     unsigned int fmt;
     unsigned int csId;
 
-    ChuckBasicHeader()
+    ChunkBasicHeader()
         : fmt(0), csId(0)
     { }
 
@@ -26,14 +26,14 @@ struct ChuckBasicHeader
     }
 };
 
-struct ChuckMsgHeader
+struct ChunkMsgHeader
 {
     unsigned int timestamp;
     unsigned int length;
     unsigned int typeId;
     unsigned int streamId;
 
-    ChuckMsgHeader()
+    ChunkMsgHeader()
         : timestamp(0), length(0), typeId(0),
           streamId(0)
     { }
@@ -69,11 +69,12 @@ public:
     { }
 
     RtmpHeaderState Decode(char *data, size_t len,
-                           const ChuckMsgHeader *lastMsgHeader,
+                           const ChunkMsgHeader *lastMsgHeader,
                            bool lastHasExtended);
 
-    ChuckMsgHeader GetMsgHeader();
-    ChuckBasicHeader GetBasicHeader();
+    ChunkMsgHeader GetMsgHeader();
+    ChunkBasicHeader GetBasicHeader();
+    int GetConsumeDataLen();
 
     bool IsComplete();
     bool HasExtenedTimestamp();
@@ -83,16 +84,16 @@ public:
 
 private:
     RtmpHeaderState DecodeBasicHeader();
-    RtmpHeaderState DecodeMsgHeader(const ChuckMsgHeader *lastMsgHeader);
-    RtmpHeaderState DecodeExtenedTimestamp(const ChuckMsgHeader *lastMsgHeader,
+    RtmpHeaderState DecodeMsgHeader(const ChunkMsgHeader *lastMsgHeader);
+    RtmpHeaderState DecodeExtenedTimestamp(const ChunkMsgHeader *lastMsgHeader,
                                            bool lastHasExtended);
 
-    void HandleTimestamp(const ChuckMsgHeader *lastMsgHeader);
+    void HandleTimestamp(const ChunkMsgHeader *lastMsgHeader);
 
     bool m_complete;
     bool m_hasExtenedTimestamp;
-    ChuckBasicHeader m_basicHeader;
-    ChuckMsgHeader m_msgHeader;
+    ChunkBasicHeader m_basicHeader;
+    ChunkMsgHeader m_msgHeader;
     ExtendedTimestamp m_extenedTimestamp;
     ByteStream m_byteStream;
 };
@@ -104,8 +105,8 @@ public:
 
     RtmpHeaderState Encode(char *data, size_t *len,
                            unsigned int csId,
-                           const ChuckMsgHeader *msgHeader,
-                           const ChuckMsgHeader *lastMsgHeader,
+                           const ChunkMsgHeader *msgHeader,
+                           const ChunkMsgHeader *lastMsgHeader,
                            bool lastHasExtended);
 
     bool HasExtendedTimestamp();
@@ -113,13 +114,13 @@ public:
     void Dump();
 
 private:
-    unsigned int GetFmt(const ChuckMsgHeader *msgHeader,
-                        const ChuckMsgHeader *lastMsgHeader);
+    unsigned int GetFmt(const ChunkMsgHeader *msgHeader,
+                        const ChunkMsgHeader *lastMsgHeader);
 
     void SetBasicHeader(unsigned int fmt, unsigned int csIdchar);
     void SetMsgHeader(unsigned int fmt,
-                      const ChuckMsgHeader *msgHeader,
-                      const ChuckMsgHeader *lastMsgHeader,
+                      const ChunkMsgHeader *msgHeader,
+                      const ChunkMsgHeader *lastMsgHeader,
                       bool lastHasExtended);
 
     static const int kMaxBytes = 3 + 11;

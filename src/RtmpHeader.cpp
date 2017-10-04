@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 RtmpHeaderState RtmpHeaderDecode::Decode(
-    char *data, size_t len, const ChuckMsgHeader *lastMsgHeader,
+    char *data, size_t len, const ChunkMsgHeader *lastMsgHeader,
     bool lastHasExtended)
 {
     if (!m_byteStream.Initialize(data, len))
@@ -23,14 +23,19 @@ RtmpHeaderState RtmpHeaderDecode::Decode(
     return state;
 }
 
-ChuckMsgHeader RtmpHeaderDecode::GetMsgHeader()
+ChunkMsgHeader RtmpHeaderDecode::GetMsgHeader()
 {
     return m_msgHeader;
 }
 
-ChuckBasicHeader RtmpHeaderDecode::GetBasicHeader()
+ChunkBasicHeader RtmpHeaderDecode::GetBasicHeader()
 {
     return m_basicHeader;
+}
+
+int RtmpHeaderDecode::GetConsumeDataLen()
+{
+    return m_byteStream.Pos();
 }
 
 bool RtmpHeaderDecode::IsComplete()
@@ -95,7 +100,7 @@ RtmpHeaderState RtmpHeaderDecode::DecodeBasicHeader()
 }
 
 RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader(
-    const ChuckMsgHeader *lastMsgHeader)
+    const ChunkMsgHeader *lastMsgHeader)
 {
     if (m_basicHeader.fmt > 0 && !lastMsgHeader)
         return RtmpHeaderState_Error;
@@ -149,7 +154,7 @@ RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader(
 }
 
 RtmpHeaderState RtmpHeaderDecode::DecodeExtenedTimestamp(
-    const ChuckMsgHeader *lastMsgHeader, bool lastHasExtended)
+    const ChunkMsgHeader *lastMsgHeader, bool lastHasExtended)
 {
 
     if (m_hasExtenedTimestamp)
@@ -182,7 +187,7 @@ RtmpHeaderState RtmpHeaderDecode::DecodeExtenedTimestamp(
 }
 
 void RtmpHeaderDecode::HandleTimestamp(
-    const ChuckMsgHeader *lastMsgHeader)
+    const ChunkMsgHeader *lastMsgHeader)
 {
     m_msgHeader.timestamp = m_byteStream.Read3Bytes();
     if (m_msgHeader.timestamp >= 0x00ffffff)
@@ -198,8 +203,8 @@ RtmpHeaderEncode::RtmpHeaderEncode()
 RtmpHeaderState RtmpHeaderEncode::Encode(
     char *data, size_t *len,
     unsigned int csId,
-    const ChuckMsgHeader *msgHeader,
-    const ChuckMsgHeader *lastMsgHeader,
+    const ChunkMsgHeader *msgHeader,
+    const ChunkMsgHeader *lastMsgHeader,
     bool lastHasExtended)
 {
     if (!msgHeader || *len < kMaxBytes ||
@@ -230,8 +235,8 @@ void RtmpHeaderEncode::Dump()
 }
 
 unsigned int RtmpHeaderEncode::GetFmt(
-    const ChuckMsgHeader *msgHeader,
-    const ChuckMsgHeader *lastMsgHeader)
+    const ChunkMsgHeader *msgHeader,
+    const ChunkMsgHeader *lastMsgHeader)
 {
     unsigned int fmt = 0;
     if (!lastMsgHeader)
@@ -269,8 +274,8 @@ void RtmpHeaderEncode::SetBasicHeader(
 
 void RtmpHeaderEncode::SetMsgHeader(
     unsigned int fmt,
-    const ChuckMsgHeader *msgHeader,
-    const ChuckMsgHeader *lastMsgHeader,
+    const ChunkMsgHeader *msgHeader,
+    const ChunkMsgHeader *lastMsgHeader,
     bool lastHasExtended)
 {
     unsigned int delta = 0;
