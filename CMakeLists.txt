@@ -52,3 +52,14 @@ add_executable(RtmpHeaderTest
     src/RtmpHeader.cpp
     )
 
+add_executable(StreamProcessTest
+    src/StreamProcessTest.cpp
+    src/StreamProcess.cpp
+    src/ByteStream.cpp
+    src/RtmpHeader.cpp
+    )
+
+target_link_libraries(StreamProcessTest
+    amf
+    )
+
