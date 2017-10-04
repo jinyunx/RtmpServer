@@ -108,6 +108,10 @@ public:
     */
     void Write4Bytes(int32_t value);
     /**
+    * write 4bytes int to stream.
+    */
+    void Write4BytesKeepOriOrder(int32_t value);
+    /**
     * write 3bytes int to stream.
     */
     void Write3Bytes(int32_t value);

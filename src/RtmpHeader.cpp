@@ -1,44 +1,49 @@
 #include "RtmpHeader.h"
 #include <stdio.h>
 
-ParseState RtmpHeader::Parse(char *data, size_t len,
-                             const ChuckMsgHeader *lastMsgHeader,
-                             bool lastHasExtended)
+RtmpHeaderState RtmpHeaderDecode::Decode(
+    char *data, size_t len, const ChuckMsgHeader *lastMsgHeader,
+    bool lastHasExtended)
 {
     if (!m_byteStream.Initialize(data, len))
-        return ParseState_NotEnoughData;
+        return RtmpHeaderState_NotEnoughData;
 
-    ParseState state = ParseBasicHeader();
-    if (state != ParseState_Ok)
+    RtmpHeaderState state = DecodeBasicHeader();
+    if (state != RtmpHeaderState_Ok)
         return state;
 
-    state = ParseMsgHeader(lastMsgHeader);
-    if (state != ParseState_Ok)
+    state = DecodeMsgHeader(lastMsgHeader);
+    if (state != RtmpHeaderState_Ok)
         return state;
 
-    state = ParseExtenedTimestamp(lastMsgHeader, lastHasExtended);
-    if (state == ParseState_Ok)
+    state = DecodeExtenedTimestamp(lastMsgHeader, lastHasExtended);
+    if (state == RtmpHeaderState_Ok)
         m_complete = true;
 
     return state;
 }
 
-ChuckMsgHeader RtmpHeader::GetMsgHeader()
+ChuckMsgHeader RtmpHeaderDecode::GetMsgHeader()
 {
     return m_msgHeader;
 }
 
-bool RtmpHeader::IsComplete()
+ChuckBasicHeader RtmpHeaderDecode::GetBasicHeader()
+{
+    return m_basicHeader;
+}
+
+bool RtmpHeaderDecode::IsComplete()
 {
     return m_complete;
 }
 
-bool RtmpHeader::HasExtenedTimestamp()
+bool RtmpHeaderDecode::HasExtenedTimestamp()
 {
     return m_hasExtenedTimestamp;
 }
 
-void RtmpHeader::Reset()
+void RtmpHeaderDecode::Reset()
 {
     m_complete = false;
     m_hasExtenedTimestamp = false;
@@ -48,7 +53,7 @@ void RtmpHeader::Reset()
     m_byteStream.Initialize(0, 0);
 }
 
-void RtmpHeader::Dump()
+void RtmpHeaderDecode::Dump()
 {
     fprintf(stdout, "fmt: %d, csid: %d, timestamp: %d,"
             " length: %d, typeId: %d, streamId: %d\n",
@@ -56,10 +61,10 @@ void RtmpHeader::Dump()
             m_msgHeader.length, m_msgHeader.typeId, m_msgHeader.streamId);
 }
 
-ParseState RtmpHeader::ParseBasicHeader()
+RtmpHeaderState RtmpHeaderDecode::DecodeBasicHeader()
 {
     if (!m_byteStream.Require(1))
-        return ParseState_NotEnoughData;
+        return RtmpHeaderState_NotEnoughData;
 
     char oneByte = m_byteStream.Read1Bytes();
     m_basicHeader.csId = static_cast<unsigned int>(oneByte & 0x3f);
@@ -69,36 +74,37 @@ ParseState RtmpHeader::ParseBasicHeader()
     {
     case 0:
         if (!m_byteStream.Require(1))
-            return ParseState_NotEnoughData;
+            return RtmpHeaderState_NotEnoughData;
 
         m_basicHeader.csId =
             64 + static_cast<unsigned int>(m_byteStream.Read1Bytes());
-        return ParseState_Ok;
+        return RtmpHeaderState_Ok;
 
     case 1:
         if (!m_byteStream.Require(2))
-            return ParseState_NotEnoughData;
+            return RtmpHeaderState_NotEnoughData;
 
         m_basicHeader.csId = 64 +
             static_cast<unsigned int>(m_byteStream.Read1Bytes()) +
             static_cast<unsigned int>(m_byteStream.Read1Bytes()) * 256;
-        return ParseState_Ok;
+        return RtmpHeaderState_Ok;
 
     default:
-        return ParseState_Ok;
+        return RtmpHeaderState_Ok;
     }
 }
 
-ParseState RtmpHeader::ParseMsgHeader(const ChuckMsgHeader *lastMsgHeader)
+RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader(
+    const ChuckMsgHeader *lastMsgHeader)
 {
     if (m_basicHeader.fmt > 0 && !lastMsgHeader)
-        return ParseState_Error;
+        return RtmpHeaderState_Error;
 
     switch (m_basicHeader.fmt)
     {
     case 0:
         if (!m_byteStream.Require(11))
-            return ParseState_NotEnoughData;
+            return RtmpHeaderState_NotEnoughData;
 
         HandleTimestamp(lastMsgHeader);
         m_msgHeader.length = m_byteStream.Read3Bytes();
@@ -107,49 +113,49 @@ ParseState RtmpHeader::ParseMsgHeader(const ChuckMsgHeader *lastMsgHeader)
         // Inputed stream id is little endian already
         m_msgHeader.streamId =
             static_cast<unsigned int>(m_byteStream.Read4BytesKeepOriOrder());
-        return ParseState_Ok;
+        return RtmpHeaderState_Ok;
 
     case 1:
         if (!m_byteStream.Require(7))
-            return ParseState_NotEnoughData;
+            return RtmpHeaderState_NotEnoughData;
 
         HandleTimestamp(lastMsgHeader);
         m_msgHeader.length = m_byteStream.Read3Bytes();
         m_msgHeader.typeId =
             static_cast<unsigned int>(m_byteStream.Read1Bytes());
         m_msgHeader.streamId = lastMsgHeader->streamId;
-        return ParseState_Ok;
+        return RtmpHeaderState_Ok;
 
     case 2:
         if (!m_byteStream.Require(3))
-            return ParseState_NotEnoughData;
+            return RtmpHeaderState_NotEnoughData;
 
         HandleTimestamp(lastMsgHeader);
         m_msgHeader.length = lastMsgHeader->length;
         m_msgHeader.typeId = lastMsgHeader->typeId;
         m_msgHeader.streamId = lastMsgHeader->streamId;
-        return ParseState_Ok;
+        return RtmpHeaderState_Ok;
 
     case 3:
         m_msgHeader.timestamp = lastMsgHeader->timestamp;
         m_msgHeader.length = lastMsgHeader->length;
         m_msgHeader.typeId = lastMsgHeader->typeId;
         m_msgHeader.streamId = lastMsgHeader->streamId;
-        return ParseState_Ok;
+        return RtmpHeaderState_Ok;
 
     default:
-        return ParseState_Error;
+        return RtmpHeaderState_Error;
     }
 }
 
-ParseState RtmpHeader::ParseExtenedTimestamp(const ChuckMsgHeader *lastMsgHeader,
-                                             bool lastHasExtended)
+RtmpHeaderState RtmpHeaderDecode::DecodeExtenedTimestamp(
+    const ChuckMsgHeader *lastMsgHeader, bool lastHasExtended)
 {
 
     if (m_hasExtenedTimestamp)
     {
         if (!m_byteStream.Require(4))
-            return ParseState_NotEnoughData;
+            return RtmpHeaderState_NotEnoughData;
 
         m_extenedTimestamp.t = m_byteStream.Read4Bytes();
         m_msgHeader.timestamp = m_extenedTimestamp.t;
@@ -158,7 +164,7 @@ ParseState RtmpHeader::ParseExtenedTimestamp(const ChuckMsgHeader *lastMsgHeader
     else if (m_basicHeader.fmt == 3 && lastHasExtended)
     {
         if (!m_byteStream.Require(4))
-            return ParseState_NotEnoughData;
+            return RtmpHeaderState_NotEnoughData;
 
         if (lastMsgHeader->timestamp ==
                 static_cast<unsigned int>(m_byteStream.Read4Bytes()))
@@ -172,14 +178,160 @@ ParseState RtmpHeader::ParseExtenedTimestamp(const ChuckMsgHeader *lastMsgHeader
             m_byteStream.Skip(-4);
         }
     }
-    return ParseState_Ok;
+    return RtmpHeaderState_Ok;
 }
 
-void RtmpHeader::HandleTimestamp(const ChuckMsgHeader *lastMsgHeader)
+void RtmpHeaderDecode::HandleTimestamp(
+    const ChuckMsgHeader *lastMsgHeader)
 {
     m_msgHeader.timestamp = m_byteStream.Read3Bytes();
     if (m_msgHeader.timestamp >= 0x00ffffff)
         m_hasExtenedTimestamp = true;
     else if (m_basicHeader.fmt != 0)
         m_msgHeader.timestamp += lastMsgHeader->timestamp;
+}
+
+RtmpHeaderEncode::RtmpHeaderEncode()
+    : m_hasExtended(false)
+{ }
+
+RtmpHeaderState RtmpHeaderEncode::Encode(
+    char *data, size_t *len,
+    unsigned int csId,
+    const ChuckMsgHeader *msgHeader,
+    const ChuckMsgHeader *lastMsgHeader,
+    bool lastHasExtended)
+{
+    if (!msgHeader || *len < kMaxBytes ||
+        csId < 2 || csId > 0x3fffff)
+        return RtmpHeaderState_Error;
+
+    m_byteStream.Initialize(data, *len);
+
+    unsigned int fmt = GetFmt(msgHeader, lastMsgHeader);
+    SetBasicHeader(fmt, csId);
+
+    SetMsgHeader(fmt, msgHeader, lastMsgHeader, lastHasExtended);
+    *len = m_byteStream.Pos();
+
+    return RtmpHeaderState_Ok;
+}
+
+bool RtmpHeaderEncode::HasExtendedTimestamp()
+{
+    return m_hasExtended;
+}
+
+void RtmpHeaderEncode::Dump()
+{
+    for (int i = 0; i < m_byteStream.Pos(); ++i)
+        printf("%x ", m_byteStream.Data()[i] & 0xff);
+    printf("\n");
+}
+
+unsigned int RtmpHeaderEncode::GetFmt(
+    const ChuckMsgHeader *msgHeader,
+    const ChuckMsgHeader *lastMsgHeader)
+{
+    unsigned int fmt = 0;
+    if (!lastMsgHeader)
+        return fmt;
+
+    if (msgHeader->streamId == lastMsgHeader->streamId)
+        fmt += 1;
+    else
+        return fmt;
+
+    if (msgHeader->length == lastMsgHeader->length &&
+        msgHeader->typeId == lastMsgHeader->typeId)
+        fmt += 1;
+    else
+        return fmt;
+
+    if (msgHeader->timestamp == lastMsgHeader->timestamp)
+        fmt += 1;
+
+    return fmt;
+}
+
+void RtmpHeaderEncode::SetBasicHeader(
+    unsigned int fmt, unsigned int csId)
+{
+    if (csId < 64)
+        m_byteStream.Write1Bytes(static_cast<char>(csId));
+    else if (csId < 65599)
+        m_byteStream.Write2Bytes(static_cast<unsigned short>(csId));
+    else
+        m_byteStream.Write3Bytes(csId);
+
+    m_byteStream.Data()[0] |= fmt << 6;
+}
+
+void RtmpHeaderEncode::SetMsgHeader(
+    unsigned int fmt,
+    const ChuckMsgHeader *msgHeader,
+    const ChuckMsgHeader *lastMsgHeader,
+    bool lastHasExtended)
+{
+    unsigned int delta = 0;
+    switch (fmt)
+    {
+    case 0:
+        if (msgHeader->timestamp >= 0x00ffffff)
+            m_byteStream.Write3Bytes(0x00ffffff);
+        else
+            m_byteStream.Write3Bytes(msgHeader->timestamp);
+        m_byteStream.Write3Bytes(msgHeader->length);
+        m_byteStream.Write1Bytes(msgHeader->typeId);
+        m_byteStream.Write4BytesKeepOriOrder(msgHeader->streamId);
+
+        if (msgHeader->timestamp >= 0x00ffffff)
+        {
+            m_hasExtended = true;
+            m_byteStream.Write4Bytes(msgHeader->timestamp);
+        }
+        
+        break;
+
+    case 1:
+        delta = msgHeader->timestamp - lastMsgHeader->timestamp;
+        if (delta >= 0x00ffffff)
+            m_byteStream.Write3Bytes(0x00ffffff);
+        else
+            m_byteStream.Write3Bytes(delta);
+        m_byteStream.Write3Bytes(msgHeader->length);
+        m_byteStream.Write1Bytes(msgHeader->typeId);
+
+        if (delta >= 0x00ffffff)
+        {
+            m_hasExtended = true;
+            m_byteStream.Write4Bytes(delta);
+        }
+
+        break;
+
+    case 2:
+        delta = msgHeader->timestamp - lastMsgHeader->timestamp;
+        if (delta >= 0x00ffffff)
+            m_byteStream.Write3Bytes(0x00ffffff);
+        else
+            m_byteStream.Write3Bytes(delta);
+
+        if (delta >= 0x00ffffff)
+        {
+            m_hasExtended = true;
+            m_byteStream.Write4Bytes(delta);
+        }
+
+        break;
+
+    case 3:
+        if (lastHasExtended)
+            m_byteStream.Write4Bytes(msgHeader->timestamp);
+
+        break;
+
+    default:
+        break;
+    }
 }

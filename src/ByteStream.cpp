@@ -157,6 +157,15 @@ void ByteStream::Write4Bytes(int32_t value)
     *m_pos++ = pp[0];
 }
 
+void ByteStream::Write4BytesKeepOriOrder(int32_t value)
+{
+    char* pp = (char*)&value;
+    *m_pos++ = pp[0];
+    *m_pos++ = pp[1];
+    *m_pos++ = pp[2];
+    *m_pos++ = pp[3];
+}
+
 void ByteStream::Write3Bytes(int32_t value)
 {
     char* pp = (char*)&value;

@@ -2,6 +2,9 @@
 
 int main()
 {
+    char buff0[3 + 11];
+    size_t size = 3 + 11;
+
     // fmt: 0, csid: 6, timestamp: 0, length: 723, typeId: 9, streamId: 1
     char buff1[] = "\x06\x00\x00\x00\x00\x02\xd3\x09\x01\x00\x00\x00";
 
@@ -15,31 +18,38 @@ int main()
     char buff4[] = "\x86\x00\x00\x22";
 
     ChuckMsgHeader lastMsgHeader;
+    ChuckBasicHeader lastBasicHeader;
     bool lastHasExtended = false;
 
-    RtmpHeader rtmpHeader;
-    rtmpHeader.Parse(buff1, sizeof(buff1) - 1, 0, false);
-    rtmpHeader.Dump();
+    RtmpHeaderDecode decoder;
+    RtmpHeaderEncode encoder;
 
-    lastMsgHeader = rtmpHeader.GetMsgHeader();
-    lastHasExtended = rtmpHeader.HasExtenedTimestamp();
-    rtmpHeader.Reset();
-    
-    rtmpHeader.Parse(buff2, sizeof(buff2) - 1, &lastMsgHeader, lastHasExtended);
-    rtmpHeader.Dump();
+    decoder.Decode(buff1, sizeof(buff1) - 1, 0, false);
+    decoder.Dump();
 
-    lastMsgHeader = rtmpHeader.GetMsgHeader();
-    lastHasExtended = rtmpHeader.HasExtenedTimestamp();
-    rtmpHeader.Reset();
+    lastMsgHeader = decoder.GetMsgHeader();
+    lastBasicHeader = decoder.GetBasicHeader();
+    lastHasExtended = decoder.HasExtenedTimestamp();
+    decoder.Reset();
 
-    rtmpHeader.Parse(buff3, sizeof(buff3) - 1, &lastMsgHeader, lastHasExtended);
-    rtmpHeader.Dump();
+    encoder.Encode(buff0, &size, lastBasicHeader.csId, &lastMsgHeader, 0, lastHasExtended);
+    encoder.Dump();
 
-    lastMsgHeader = rtmpHeader.GetMsgHeader();
-    lastHasExtended = rtmpHeader.HasExtenedTimestamp();
-    rtmpHeader.Reset();
+    decoder.Decode(buff2, sizeof(buff2) - 1, &lastMsgHeader, lastHasExtended);
+    decoder.Dump();
 
-    rtmpHeader.Parse(buff4, sizeof(buff4) - 1, &lastMsgHeader, lastHasExtended);
-    rtmpHeader.Dump();
+    lastMsgHeader = decoder.GetMsgHeader();
+    lastHasExtended = decoder.HasExtenedTimestamp();
+    decoder.Reset();
+
+    decoder.Decode(buff3, sizeof(buff3) - 1, &lastMsgHeader, lastHasExtended);
+    decoder.Dump();
+
+    lastMsgHeader = decoder.GetMsgHeader();
+    lastHasExtended = decoder.HasExtenedTimestamp();
+    decoder.Reset();
+
+    decoder.Decode(buff4, sizeof(buff4) - 1, &lastMsgHeader, lastHasExtended);
+    decoder.Dump();
     return 0;
 }

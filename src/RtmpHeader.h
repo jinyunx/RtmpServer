@@ -3,11 +3,11 @@
 
 #include "ByteStream.h"
 
-enum ParseState
+enum RtmpHeaderState
 {
-    ParseState_Ok = 0,
-    ParseState_NotEnoughData,
-    ParseState_Error,
+    RtmpHeaderState_Ok = 0,
+    RtmpHeaderState_NotEnoughData,
+    RtmpHeaderState_Error,
 };
 
 struct ChuckBasicHeader
@@ -61,18 +61,19 @@ struct ExtendedTimestamp
     }
 };
 
-class RtmpHeader
+class RtmpHeaderDecode
 {
 public:
-    RtmpHeader()
+    RtmpHeaderDecode()
         : m_complete(false), m_hasExtenedTimestamp(false)
     { }
 
-    ParseState Parse(char *data, size_t len,
-                     const ChuckMsgHeader *lastMsgHeader,
-                     bool lastHasExtended);
+    RtmpHeaderState Decode(char *data, size_t len,
+                           const ChuckMsgHeader *lastMsgHeader,
+                           bool lastHasExtended);
 
     ChuckMsgHeader GetMsgHeader();
+    ChuckBasicHeader GetBasicHeader();
 
     bool IsComplete();
     bool HasExtenedTimestamp();
@@ -81,10 +82,10 @@ public:
     void Dump();
 
 private:
-    ParseState ParseBasicHeader();
-    ParseState ParseMsgHeader(const ChuckMsgHeader *lastMsgHeader);
-    ParseState ParseExtenedTimestamp(const ChuckMsgHeader *lastMsgHeader,
-                                     bool lastHasExtended);
+    RtmpHeaderState DecodeBasicHeader();
+    RtmpHeaderState DecodeMsgHeader(const ChuckMsgHeader *lastMsgHeader);
+    RtmpHeaderState DecodeExtenedTimestamp(const ChuckMsgHeader *lastMsgHeader,
+                                           bool lastHasExtended);
 
     void HandleTimestamp(const ChuckMsgHeader *lastMsgHeader);
 
@@ -93,6 +94,37 @@ private:
     ChuckBasicHeader m_basicHeader;
     ChuckMsgHeader m_msgHeader;
     ExtendedTimestamp m_extenedTimestamp;
+    ByteStream m_byteStream;
+};
+
+class RtmpHeaderEncode
+{
+public:
+    RtmpHeaderEncode();
+
+    RtmpHeaderState Encode(char *data, size_t *len,
+                           unsigned int csId,
+                           const ChuckMsgHeader *msgHeader,
+                           const ChuckMsgHeader *lastMsgHeader,
+                           bool lastHasExtended);
+
+    bool HasExtendedTimestamp();
+
+    void Dump();
+
+private:
+    unsigned int GetFmt(const ChuckMsgHeader *msgHeader,
+                        const ChuckMsgHeader *lastMsgHeader);
+
+    void SetBasicHeader(unsigned int fmt, unsigned int csIdchar);
+    void SetMsgHeader(unsigned int fmt,
+                      const ChuckMsgHeader *msgHeader,
+                      const ChuckMsgHeader *lastMsgHeader,
+                      bool lastHasExtended);
+
+    static const int kMaxBytes = 3 + 11;
+
+    bool m_hasExtended;
     ByteStream m_byteStream;
 };
 

@@ -13,5 +13,6 @@ int main()
     fprintf(stdout, "type: %d\n", amf0_data_get_type(amfData));
     amf0_data_dump(stdout, amfData, 0);
     printf("\n");
+
     return 0;
 }
