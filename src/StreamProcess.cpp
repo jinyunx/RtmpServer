@@ -1,5 +1,5 @@
 #include "StreamProcess.h"
-#include "libamf/amf0.h"
+#include "Amf0Helper.h"
 
 // TODO:
 // 1.amf0_data free obj
@@ -47,38 +47,24 @@ void StreamProcess::Dump()
 
 bool StreamProcess::Amf0Decode(char *data, size_t len, PacketType *type)
 {
-    size_t nread = 0;
-    amf0_data *amfData = amf0_data_buffer_read((uint8_t *)data, len, &nread);
-    if (!amfData || amfData->type != AMF0_TYPE_STRING)
+    Amf0Helper helper(data, len);
+
+    std::string name;
+    if (helper.Expect(AMF0_TYPE_STRING))
+        name = helper.GetString();
+    else
         return false;
 
-    std::string name((char *)amfData->string_data.mbstr,
-                     amfData->string_data.size);
-
-    data += nread;
-    len -= nread;
-    amf0_data_free(amfData);
-
-    if (len == 0)
-        return false;
-
-    nread = 0;
-    amfData = amf0_data_buffer_read((uint8_t *)data, len, &nread);
-    if (!amfData || amfData->type != AMF0_TYPE_NUMBER)
-        return false;
-
-    int transactionId = amfData->number_data;
-
-    data += nread;
-    len -= nread;
-    amf0_data_free(amfData);
-
-    if (len == 0)
+    int transactionId = 0;
+    if (helper.Expect(AMF0_TYPE_NUMBER))
+        transactionId = helper.GetNumber();
+    else
         return false;
 
     if (name == "connect")
     {
-        if (!ConnectCommandDecode(data, len, name, transactionId))
+        if (!ConnectCommandDecode(helper.GetData(), helper.GetLeftSize(),
+                                  name, transactionId))
             return false;
         *type = PacketType_Connect;
     }
@@ -89,51 +75,17 @@ bool StreamProcess::ConnectCommandDecode(char *data, size_t len,
                                          const std::string &name,
                                          int transactionId)
 {
-    amf0_data *amfData = 0;
-    while (len > 0)
-    {
-        size_t nread = 0;
-        amfData = amf0_data_buffer_read((uint8_t *)data, len, &nread);
-        if (!amfData)
-            return false;
+    Amf0Helper helper(data, len);
 
-        data += nread;
-        len -= nread;
-
-        if (amfData->type != AMF0_TYPE_OBJECT)
-        {
-            amf0_data_free(amfData);
-            amfData = 0;
-            continue;
-        }
-        break;
-    }
-
-    if (!amfData)
+    Amf0Obj obj;
+    if (helper.Expect(AMF0_TYPE_OBJECT))
+        obj = helper.GetObj();
+    else
         return false;
 
-    amf0_node * node = amf0_object_first(amfData);
-    while (node != 0)
-    {
-        amf0_data *k = amf0_object_get_name(node);
-        amf0_data *v = amf0_object_get_data(node);
-        node = amf0_object_next(node);
-
-        if (k->type != AMF0_TYPE_STRING ||
-            v->type != AMF0_TYPE_STRING)
-            continue;
-
-        std::string key((char *)k->string_data.mbstr, k->string_data.size);
-        std::string value((char *)v->string_data.mbstr, v->string_data.size);
-        if (key == "app")
-            m_connectCommand.app = value;
-        else if (key == "tcUrl")
-            m_connectCommand.tcUrl = value;
-    }
-    amf0_data_free(amfData);
-
+    m_connectCommand.app = obj["app"];
+    m_connectCommand.tcUrl = obj["tcUrl"];
     m_connectCommand.name = name;
     m_connectCommand.transactionId = transactionId;
     return true;
 }
-
