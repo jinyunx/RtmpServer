@@ -166,11 +166,17 @@ amf0_data * amf0_data_new(uint8_t type) {
 }
 
 /* read AMF data from buffer */
-amf0_data * amf0_data_buffer_read(uint8_t * buffer, size_t maxbytes) {
+amf0_data * amf0_data_buffer_read(uint8_t * buffer, size_t maxbytes, size_t *nread) {
     buffer_context ctxt;
     ctxt.start_address = ctxt.current_address = buffer;
     ctxt.buffer_size = maxbytes;
-    return amf0_data_read(buffer_read, &ctxt);
+    amf0_data * data = amf0_data_read(buffer_read, &ctxt);
+    if (data)
+    {
+        *nread = ctxt.current_address - ctxt.start_address;
+        return data;
+    }
+    return NULL;
 }
 
 /* write AMF data to buffer */

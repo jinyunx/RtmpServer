@@ -15,7 +15,8 @@ int main()
         printf("%x ", buffer[i]);
     printf("\n");
 
-    amf0_data *amfData = amf0_data_buffer_read(buffer, sizeof(buffer));
+    size_t nread = 0;
+    amf0_data *amfData = amf0_data_buffer_read(buffer, sizeof(buffer), &nread);
     fprintf(stdout, "type: %d\n", amf0_data_get_type(amfData));
     amf0_data_dump(stdout, amfData, 0);
     printf("\n");

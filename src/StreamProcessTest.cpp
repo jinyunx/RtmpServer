@@ -18,6 +18,6 @@ int main()
     StreamProcess sp;
     int rt = sp.Process(buf, sizeof(buf));
     sp.Dump();
-    printf("rt = %d, bufLen = %d\n", rt, sizeof(buf));
+    printf("rt = %d, bufLen = %ld\n", rt, sizeof(buf));
     return 0;
 }

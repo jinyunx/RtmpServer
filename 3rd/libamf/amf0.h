@@ -105,7 +105,7 @@ size_t amf0_data_write(const amf0_data * data, amf_write_proc_t write_proc, void
 /* allocate an AMF data object */
 amf0_data * amf0_data_new(uint8_t type);
 /* load AMF data from buffer */
-amf0_data * amf0_data_buffer_read(uint8_t * buffer, size_t maxbytes);
+amf0_data * amf0_data_buffer_read(uint8_t * buffer, size_t maxbytes, size_t *nread);
 /* load AMF data from stream */
 amf0_data * amf0_data_file_read(FILE * stream);
 /* AMF data size */

@@ -2,8 +2,7 @@
 #include "libamf/amf0.h"
 
 // TODO:
-// 1.amf0_data consume size
-// 2.amf0_data free obj
+// 1.amf0_data free obj
 
 int StreamProcess::Process(char *data, size_t len)
 {
@@ -48,34 +47,31 @@ void StreamProcess::Dump()
 
 bool StreamProcess::Amf0Decode(char *data, size_t len, PacketType *type)
 {
-    amf0_data *amfData = amf0_data_buffer_read((uint8_t *)data, len);
+    size_t nread = 0;
+    amf0_data *amfData = amf0_data_buffer_read((uint8_t *)data, len, &nread);
     if (!amfData || amfData->type != AMF0_TYPE_STRING)
         return false;
 
-    amf0_data_dump(stdout, amfData, 0);
-    printf("\n");
-
     std::string name((char *)amfData->string_data.mbstr,
                      amfData->string_data.size);
-    data += 3 + amfData->string_data.size;
-    len -= 3 + amfData->string_data.size;
-    amf0_data_free(amfData);
 
-    printf("name = %s, len = %d\n", name.c_str(), len);
+    data += nread;
+    len -= nread;
+    amf0_data_free(amfData);
 
     if (len == 0)
         return false;
 
-    amfData = amf0_data_buffer_read((uint8_t *)data, len);
-    printf("type = %d\n", amfData->type);
+    nread = 0;
+    amfData = amf0_data_buffer_read((uint8_t *)data, len, &nread);
     if (!amfData || amfData->type != AMF0_TYPE_NUMBER)
         return false;
-    int transactionId = amfData->number_data;
-    data += 9;
-    len -= 9;
-    amf0_data_free(amfData);
 
-    printf("transactionId = %d\n", transactionId);
+    int transactionId = amfData->number_data;
+
+    data += nread;
+    len -= nread;
+    amf0_data_free(amfData);
 
     if (len == 0)
         return false;
@@ -93,22 +89,16 @@ bool StreamProcess::ConnectCommandDecode(char *data, size_t len,
                                          const std::string &name,
                                          int transactionId)
 {
-    for (int i = 0; i < len; ++i)
-        printf("%x ", data[i] & 0xff);
-    printf("\n");
-
     amf0_data *amfData = 0;
     while (len > 0)
     {
-        amfData = amf0_data_buffer_read((uint8_t *)data, len);
+        size_t nread = 0;
+        amfData = amf0_data_buffer_read((uint8_t *)data, len, &nread);
         if (!amfData)
             return false;
 
-        printf("type = %d\n", amfData->type);
-
-        // TODO
-        data += amfData->string_data.size;
-        len -= amfData->string_data.size;
+        data += nread;
+        len -= nread;
 
         if (amfData->type != AMF0_TYPE_OBJECT)
         {
