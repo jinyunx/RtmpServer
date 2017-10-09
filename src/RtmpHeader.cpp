@@ -23,14 +23,19 @@ RtmpHeaderState RtmpHeaderDecode::Decode(
     return state;
 }
 
-ChunkMsgHeader RtmpHeaderDecode::GetMsgHeader()
+ChunkMsgHeader RtmpHeaderDecode::GetMsgHeader() const
 {
     return m_msgHeader;
 }
 
-ChunkBasicHeader RtmpHeaderDecode::GetBasicHeader()
+ChunkBasicHeader RtmpHeaderDecode::GetBasicHeader() const
 {
     return m_basicHeader;
+}
+
+ExtendedTimestamp RtmpHeaderDecode::GetExtendedTimestamp() const
+{
+    return m_extenedTimestamp;
 }
 
 int RtmpHeaderDecode::GetConsumeDataLen()

@@ -72,8 +72,9 @@ public:
                            const ChunkMsgHeader *lastMsgHeader,
                            bool lastHasExtended);
 
-    ChunkMsgHeader GetMsgHeader();
-    ChunkBasicHeader GetBasicHeader();
+    ChunkMsgHeader GetMsgHeader() const;
+    ChunkBasicHeader GetBasicHeader() const;
+    ExtendedTimestamp GetExtendedTimestamp() const;
     int GetConsumeDataLen();
 
     bool IsComplete();
