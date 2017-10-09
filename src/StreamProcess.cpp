@@ -6,12 +6,7 @@
 
 int StreamProcess::Process(char *data, size_t len)
 {
-    ChunkMsgHeader *lastMsgHeader = &m_lastMsgHeader;
-    if (m_first)
-        lastMsgHeader = 0;
-
-    RtmpHeaderState state = m_headerDecoder.Decode(
-        data, len, lastMsgHeader, m_lastHasExtended);
+    RtmpHeaderState state = m_headerDecoder.Decode(data, len);
 
     if (state == RtmpHeaderState_Error)
         return -1;
@@ -27,15 +22,20 @@ int StreamProcess::Process(char *data, size_t len)
     if (len < needLen)
         return 0;
 
-    m_lastMsgHeader = m_headerDecoder.GetMsgHeader();
-    m_lastHasExtended = m_headerDecoder.HasExtenedTimestamp();
-    m_lastBasicHeader = m_headerDecoder.GetBasicHeader();
+    PacketMeta meta;
+    meta.basicHeader = m_headerDecoder.GetBasicHeader();
+    meta.extendedTimestamp = m_headerDecoder.GetExtendedTimestamp();
+    meta.msgHeader = m_headerDecoder.GetMsgHeader();
 
-    PacketType type;
-    if (!Amf0Decode(data + headLen, bodyLen, &type))
+    if (!Amf0Decode(data + headLen, bodyLen, meta))
         return -1;
     else
         return needLen;
+}
+
+void StreamProcess::SetOnChunkRecv(const OnChunkRecv &onChunkRecv)
+{
+    m_onChunkRecv = onChunkRecv;
 }
 
 void StreamProcess::Dump()
@@ -45,7 +45,7 @@ void StreamProcess::Dump()
            m_connectCommand.app.c_str(), m_connectCommand.tcUrl.c_str());
 }
 
-bool StreamProcess::Amf0Decode(char *data, size_t len, PacketType *type)
+bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
 {
     Amf0Helper helper(data, len);
 
@@ -63,17 +63,47 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketType *type)
 
     if (name == "connect")
     {
-        if (!ConnectCommandDecode(helper.GetData(), helper.GetLeftSize(),
-                                  name, transactionId))
+        if (!ConnectDecode(helper.GetData(), helper.GetLeftSize(),
+                           name, transactionId))
             return false;
-        *type = PacketType_Connect;
+
+        meta.type = PacketType_Connect;
+        OnConnect(meta, m_connectCommand);
     }
+    else if (name == "FCPublish")
+    {
+        if (!FCPublishDecode(helper.GetData(), helper.GetLeftSize(),
+                             name, transactionId))
+            return false;
+
+        meta.type = PacketType_FCPublish;
+        OnFCPublish(meta, m_fcpublishCommand);
+    }
+    else if (name == "createStream")
+    {
+        if (!CreateStreamDecode(helper.GetData(), helper.GetLeftSize(),
+                                name, transactionId))
+            return false;
+
+        meta.type = PacketType_CreateStream;
+        OnCreateStream(meta, m_csCommand);
+    }
+    else if (name == "publish")
+    {
+        if (!PublishDecode(helper.GetData(), helper.GetLeftSize(),
+                           name, transactionId))
+            return false;
+
+        meta.type = PacketType_Publish;
+        OnPublish(meta, m_publishCommand);
+    }
+
     return true;
 }
 
-bool StreamProcess::ConnectCommandDecode(char *data, size_t len,
-                                         const std::string &name,
-                                         int transactionId)
+bool StreamProcess::ConnectDecode(char *data, size_t len,
+                                  const std::string &name,
+                                  int transactionId)
 {
     Amf0Helper helper(data, len);
 
@@ -89,3 +119,98 @@ bool StreamProcess::ConnectCommandDecode(char *data, size_t len,
     m_connectCommand.transactionId = transactionId;
     return true;
 }
+
+void StreamProcess::OnConnect(const PacketMeta &meta,
+                              const ConnectCommand &command)
+{
+    if (m_onChunkRecv)
+        m_onChunkRecv(meta, &command);
+
+    // SetWinAckSize();
+    // SetPeerBandwidth
+    // SetChunkSize();
+    // ResponseConnect();
+}
+
+bool StreamProcess::FCPublishDecode(
+    char *data, size_t len, const std::string &name, int transactionId)
+{
+    Amf0Helper helper(data, len);
+
+    std::string streamName;
+    if (helper.Expect(AMF0_TYPE_STRING))
+        streamName = helper.GetString();
+    else
+        return false;
+
+    m_fcpublishCommand.name = name;
+    m_fcpublishCommand.transactionId = transactionId;
+    m_fcpublishCommand.streamName = streamName;
+    return true;
+}
+
+void StreamProcess::OnFCPublish(const PacketMeta &meta,
+                                const FCPublishCommand &command)
+{
+    if (m_onChunkRecv)
+        m_onChunkRecv(meta, &command);
+
+    // ResponseFCPublish();
+}
+
+bool StreamProcess::CreateStreamDecode(
+    char *data, size_t len, const std::string &name, int transactionId)
+{
+    m_csCommand.name = name;
+    m_csCommand.transactionId = transactionId;
+    return true;
+}
+
+void StreamProcess::OnCreateStream(const PacketMeta &meta,
+                                   const CreateStreamCommand &command)
+{
+    if (m_onChunkRecv)
+        m_onChunkRecv(meta, &command);
+
+    // ResponseCreateStream();
+}
+
+bool StreamProcess::PublishDecode(
+    char *data, size_t len, const std::string &name, int transactionId)
+{
+    Amf0Helper helper(data, len);
+
+    std::string streamName;
+    if (helper.Expect(AMF0_TYPE_STRING))
+        streamName = helper.GetString();
+    else
+        return false;
+
+    std::string app;
+    if (helper.Expect(AMF0_TYPE_STRING))
+        app = helper.GetString();
+    else
+        return false;
+
+    m_publishCommand.name = name;
+    m_publishCommand.transactionId = transactionId;
+    m_publishCommand.streamName = streamName;
+    m_publishCommand.app = app;
+
+    return true;
+}
+
+void StreamProcess::OnPublish(const PacketMeta &meta,
+                              const PublishCommand &command)
+{
+    if (m_onChunkRecv)
+        m_onChunkRecv(meta, &command);
+
+    // ResponsePublish();
+}
+
+void StreamProcess::SetWinAckSize()
+{
+
+}
+

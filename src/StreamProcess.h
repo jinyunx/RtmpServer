@@ -8,8 +8,15 @@
 enum PacketType
 {
     PacketType_Connect,
+    PacketType_FCPublish,
+    PacketType_CreateStream,
+    PacketType_Publish,
     PacketType_Video,
     PacketType_Audio,
+
+    PacketType_WinAckSize,
+    PacketType_ChunkSize,
+    PacketType_Result,
 };
 
 struct PacketMeta
@@ -28,28 +35,76 @@ struct ConnectCommand
     std::string tcUrl;
 };
 
+struct FCPublishCommand
+{
+    std::string name;
+    int transactionId;
+    std::string streamName;
+};
+
+struct CreateStreamCommand
+{
+    std::string name;
+    int transactionId;
+};
+
+struct PublishCommand
+{
+    std::string name;
+    int transactionId;
+    std::string streamName;
+    std::string app;
+};
+
 class StreamProcess
 {
 public:
-    typedef boost::function<void(const PacketMeta &, void *)> OnChunkRev;
+    typedef boost::function<void(const PacketMeta &, const void *)> OnChunkRecv;
     typedef boost::function<void(const char *, size_t)> OnChunkSend;
 
     int Process(char *data, size_t len);
+    void SetOnChunkRecv(const OnChunkRecv &onChunkRecv);
     void Dump();
 
 private:
-    bool Amf0Decode(char *data, size_t len, PacketType *type);
-    bool ConnectCommandDecode(char *data, size_t len,
-                              const std::string &name,
-                              int transactionId);
+    bool Amf0Decode(char *data, size_t len, PacketMeta &meta);
 
-    bool m_first;
+    bool ConnectDecode(char *data, size_t len,
+                       const std::string &name,
+                       int transactionId);
+    void OnConnect(const PacketMeta &meta,
+                   const ConnectCommand &command);
+
+    bool FCPublishDecode(char *data, size_t len,
+                         const std::string &name,
+                         int transactionId);
+    void OnFCPublish(const PacketMeta &meta,
+                     const FCPublishCommand &command);
+
+    bool CreateStreamDecode(char *data, size_t len,
+                            const std::string &name,
+                            int transactionId);
+    void OnCreateStream(const PacketMeta &meta,
+                        const CreateStreamCommand &command);
+
+    bool PublishDecode(char *data, size_t len,
+                       const std::string &name,
+                       int transactionId);
+    void OnPublish(const PacketMeta &meta,
+                   const PublishCommand &command);
+
+    void SetWinAckSize();
+    void SetPeerBandwidth();
+    void SetChunkSize();
+
     RtmpHeaderDecode m_headerDecoder;
-    ChunkMsgHeader m_lastMsgHeader;
-    ChunkBasicHeader m_lastBasicHeader;
-    bool m_lastHasExtended;
+
+    OnChunkRecv m_onChunkRecv;
 
     ConnectCommand m_connectCommand;
+    FCPublishCommand m_fcpublishCommand;
+    CreateStreamCommand m_csCommand;
+    PublishCommand m_publishCommand;
 };
 
 #endif // STREAM_PROCESS_H

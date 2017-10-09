@@ -2,8 +2,7 @@
 #include <stdio.h>
 
 RtmpHeaderState RtmpHeaderDecode::Decode(
-    char *data, size_t len, const ChunkMsgHeader *lastMsgHeader,
-    bool lastHasExtended)
+    char *data, size_t len)
 {
     if (!m_byteStream.Initialize(data, len))
         return RtmpHeaderState_NotEnoughData;
@@ -12,13 +11,17 @@ RtmpHeaderState RtmpHeaderDecode::Decode(
     if (state != RtmpHeaderState_Ok)
         return state;
 
-    state = DecodeMsgHeader(lastMsgHeader);
+    state = DecodeMsgHeader();
     if (state != RtmpHeaderState_Ok)
         return state;
 
-    state = DecodeExtenedTimestamp(lastMsgHeader, lastHasExtended);
+    state = DecodeExtenedTimestamp();
     if (state == RtmpHeaderState_Ok)
+    {
         m_complete = true;
+        m_csIdMsgHeader[m_basicHeader.csId] = m_msgHeader;
+        m_csIdHasExtended[m_basicHeader.csId] = m_hasExtenedTimestamp;
+    }
 
     return state;
 }
@@ -60,6 +63,8 @@ void RtmpHeaderDecode::Reset()
     m_basicHeader.Reset();
     m_msgHeader.Reset();
     m_extenedTimestamp.Reset();
+    m_csIdMsgHeader.clear();
+    m_csIdHasExtended.clear();
     m_byteStream.Initialize(0, 0);
 }
 
@@ -104,11 +109,16 @@ RtmpHeaderState RtmpHeaderDecode::DecodeBasicHeader()
     }
 }
 
-RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader(
-    const ChunkMsgHeader *lastMsgHeader)
+RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader()
 {
-    if (m_basicHeader.fmt > 0 && !lastMsgHeader)
-        return RtmpHeaderState_Error;
+    ChunkMsgHeader *lastMsgHeader = 0;
+    if (m_basicHeader.fmt > 0)
+    {
+        CsIdMsgHeader::iterator it = m_csIdMsgHeader.find(m_basicHeader.csId);
+        if (it == m_csIdMsgHeader.end())
+            return RtmpHeaderState_Error;
+        lastMsgHeader = &it->second;
+    }
 
     switch (m_basicHeader.fmt)
     {
@@ -158,10 +168,8 @@ RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader(
     }
 }
 
-RtmpHeaderState RtmpHeaderDecode::DecodeExtenedTimestamp(
-    const ChunkMsgHeader *lastMsgHeader, bool lastHasExtended)
+RtmpHeaderState RtmpHeaderDecode::DecodeExtenedTimestamp()
 {
-
     if (m_hasExtenedTimestamp)
     {
         if (!m_byteStream.Require(4))
@@ -171,15 +179,15 @@ RtmpHeaderState RtmpHeaderDecode::DecodeExtenedTimestamp(
         m_msgHeader.timestamp = m_extenedTimestamp.t;
     }
     // See https://forums.adobe.com/thread/542749
-    else if (m_basicHeader.fmt == 3 && lastHasExtended)
+    else if (m_basicHeader.fmt == 3 && m_csIdHasExtended[m_basicHeader.csId])
     {
         if (!m_byteStream.Require(4))
             return RtmpHeaderState_NotEnoughData;
 
-        if (lastMsgHeader->timestamp ==
+        if (m_csIdMsgHeader[m_basicHeader.csId].timestamp ==
                 static_cast<unsigned int>(m_byteStream.Read4Bytes()))
         {
-            m_extenedTimestamp.t = lastMsgHeader->timestamp;
+            m_extenedTimestamp.t = m_csIdMsgHeader[m_basicHeader.csId].timestamp;
             m_msgHeader.timestamp = m_extenedTimestamp.t;
             m_hasExtenedTimestamp = true;
         }
@@ -208,21 +216,27 @@ RtmpHeaderEncode::RtmpHeaderEncode()
 RtmpHeaderState RtmpHeaderEncode::Encode(
     char *data, size_t *len,
     unsigned int csId,
-    const ChunkMsgHeader *msgHeader,
-    const ChunkMsgHeader *lastMsgHeader,
-    bool lastHasExtended)
+    const ChunkMsgHeader &msgHeader)
 {
-    if (!msgHeader || *len < kMaxBytes ||
+    if (*len < kMaxBytes ||
         csId < 2 || csId > 0x3fffff)
         return RtmpHeaderState_Error;
 
     m_byteStream.Initialize(data, *len);
 
-    unsigned int fmt = GetFmt(msgHeader, lastMsgHeader);
+    ChunkMsgHeader *lastMsgHeader = 0;
+    CsIdMsgHeader::iterator it = m_csIdMsgHeader.find(csId);
+    if (it != m_csIdMsgHeader.end())
+        lastMsgHeader = &it->second;
+
+    unsigned int fmt = GetFmt(&msgHeader, lastMsgHeader);
     SetBasicHeader(fmt, csId);
 
-    SetMsgHeader(fmt, msgHeader, lastMsgHeader, lastHasExtended);
+    SetMsgHeader(fmt, &msgHeader, lastMsgHeader, m_csIdHasExtended[csId]);
+
     *len = m_byteStream.Pos();
+    m_csIdMsgHeader[csId] = msgHeader;
+    m_csIdHasExtended[csId] = m_hasExtended;
 
     return RtmpHeaderState_Ok;
 }
@@ -337,8 +351,10 @@ void RtmpHeaderEncode::SetMsgHeader(
 
     case 3:
         if (lastHasExtended)
+        {
+            m_hasExtended = true;
             m_byteStream.Write4Bytes(msgHeader->timestamp);
-
+        }
         break;
 
     default:

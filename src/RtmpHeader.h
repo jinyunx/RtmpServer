@@ -2,6 +2,7 @@
 #define RTMP_HEADER_H
 
 #include "ByteStream.h"
+#include <map>
 
 enum RtmpHeaderState
 {
@@ -61,6 +62,9 @@ struct ExtendedTimestamp
     }
 };
 
+typedef std::map<int, ChunkMsgHeader> CsIdMsgHeader;
+typedef std::map<int, bool> CsIdHasExtended;
+
 class RtmpHeaderDecode
 {
 public:
@@ -68,9 +72,7 @@ public:
         : m_complete(false), m_hasExtenedTimestamp(false)
     { }
 
-    RtmpHeaderState Decode(char *data, size_t len,
-                           const ChunkMsgHeader *lastMsgHeader,
-                           bool lastHasExtended);
+    RtmpHeaderState Decode(char *data, size_t len);
 
     ChunkMsgHeader GetMsgHeader() const;
     ChunkBasicHeader GetBasicHeader() const;
@@ -85,9 +87,8 @@ public:
 
 private:
     RtmpHeaderState DecodeBasicHeader();
-    RtmpHeaderState DecodeMsgHeader(const ChunkMsgHeader *lastMsgHeader);
-    RtmpHeaderState DecodeExtenedTimestamp(const ChunkMsgHeader *lastMsgHeader,
-                                           bool lastHasExtended);
+    RtmpHeaderState DecodeMsgHeader();
+    RtmpHeaderState DecodeExtenedTimestamp();
 
     void HandleTimestamp(const ChunkMsgHeader *lastMsgHeader);
 
@@ -97,6 +98,9 @@ private:
     ChunkMsgHeader m_msgHeader;
     ExtendedTimestamp m_extenedTimestamp;
     ByteStream m_byteStream;
+
+    CsIdMsgHeader m_csIdMsgHeader;
+    CsIdHasExtended m_csIdHasExtended;
 };
 
 class RtmpHeaderEncode
@@ -106,9 +110,7 @@ public:
 
     RtmpHeaderState Encode(char *data, size_t *len,
                            unsigned int csId,
-                           const ChunkMsgHeader *msgHeader,
-                           const ChunkMsgHeader *lastMsgHeader,
-                           bool lastHasExtended);
+                           const ChunkMsgHeader &msgHeader);
 
     bool HasExtendedTimestamp();
 
@@ -128,6 +130,9 @@ private:
 
     bool m_hasExtended;
     ByteStream m_byteStream;
+
+    CsIdMsgHeader m_csIdMsgHeader;
+    CsIdHasExtended m_csIdHasExtended;
 };
 
 #endif // RTMP_HEADER_H

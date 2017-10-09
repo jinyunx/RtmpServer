@@ -17,39 +17,40 @@ int main()
     // fmt: 2, csid: 6, timestamp: 67, length: 190, typeId: 9, streamId: 1
     char buff4[] = "\x86\x00\x00\x22";
 
-    ChunkMsgHeader lastMsgHeader;
-    ChunkBasicHeader lastBasicHeader;
-    bool lastHasExtended = false;
-
     RtmpHeaderDecode decoder;
     RtmpHeaderEncode encoder;
 
-    decoder.Decode(buff1, sizeof(buff1) - 1, 0, false);
+    decoder.Decode(buff1, sizeof(buff1) - 1);
     decoder.Dump();
 
-    lastMsgHeader = decoder.GetMsgHeader();
-    lastBasicHeader = decoder.GetBasicHeader();
-    lastHasExtended = decoder.HasExtenedTimestamp();
-    decoder.Reset();
-
-    encoder.Encode(buff0, &size, lastBasicHeader.csId, &lastMsgHeader, 0, lastHasExtended);
+    size = 14;
+    encoder.Encode(buff0, &size, decoder.GetBasicHeader().csId,
+                   decoder.GetMsgHeader());
     encoder.Dump();
 
-    decoder.Decode(buff2, sizeof(buff2) - 1, &lastMsgHeader, lastHasExtended);
+    decoder.Decode(buff2, sizeof(buff2) - 1);
     decoder.Dump();
 
-    lastMsgHeader = decoder.GetMsgHeader();
-    lastHasExtended = decoder.HasExtenedTimestamp();
-    decoder.Reset();
+    size = 14;
+    encoder.Encode(buff0, &size, decoder.GetBasicHeader().csId,
+                   decoder.GetMsgHeader());
+    encoder.Dump();
 
-    decoder.Decode(buff3, sizeof(buff3) - 1, &lastMsgHeader, lastHasExtended);
+    decoder.Decode(buff3, sizeof(buff3) - 1);
     decoder.Dump();
 
-    lastMsgHeader = decoder.GetMsgHeader();
-    lastHasExtended = decoder.HasExtenedTimestamp();
-    decoder.Reset();
+    size = 14;
+    encoder.Encode(buff0, &size, decoder.GetBasicHeader().csId,
+                   decoder.GetMsgHeader());
+    encoder.Dump();
 
-    decoder.Decode(buff4, sizeof(buff4) - 1, &lastMsgHeader, lastHasExtended);
+    decoder.Decode(buff4, sizeof(buff4) - 1);
     decoder.Dump();
+
+    size = 14;
+    encoder.Encode(buff0, &size, decoder.GetBasicHeader().csId,
+                   decoder.GetMsgHeader());
+    encoder.Dump();
+
     return 0;
 }
