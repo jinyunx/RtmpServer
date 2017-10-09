@@ -32,18 +32,9 @@ set(LIBRARY_OUTPUT_PATH "${PROJECT_BINARY_DIR}/lib")
 include_directories("/root/onexie/cppDev/boost/include")
 include_directories("${PROJECT_BINARY_DIR}/3rd")
 
-add_library(amf
-    ${PROJECT_BINARY_DIR}/3rd/libamf/amf0.c
-    ${PROJECT_BINARY_DIR}/3rd/libamf/io.c
-    ${PROJECT_BINARY_DIR}/3rd/libamf/types.c
-    )
-
-add_executable(AmfTest
-    src/AmfTest.cpp
-    )
-
-target_link_libraries(AmfTest
-    amf
+add_library(amfx
+    ${PROJECT_BINARY_DIR}/3rd/libamfx/amf.cc
+    ${PROJECT_BINARY_DIR}/3rd/libamfx/utils.cc
     )
 
 add_executable(RtmpHeaderTest
@@ -60,6 +51,5 @@ add_executable(StreamProcessTest
     )
 
 target_link_libraries(StreamProcessTest
-    amf
+    amfx
     )
-

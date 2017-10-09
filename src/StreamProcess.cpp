@@ -1,5 +1,6 @@
 #include "StreamProcess.h"
 #include "Amf0Helper.h"
+#include "stdio.h"
 
 // TODO:
 // 1.amf0_data free obj
@@ -62,13 +63,13 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
     Amf0Helper helper(data, len);
 
     std::string name;
-    if (helper.Expect(AMF0_TYPE_STRING))
+    if (helper.Expect(AMF_STRING))
         name = helper.GetString();
     else
         return false;
 
     int transactionId = 0;
-    if (helper.Expect(AMF0_TYPE_NUMBER))
+    if (helper.Expect(AMF_NUMBER))
         transactionId = helper.GetNumber();
     else
         return false;
@@ -120,7 +121,7 @@ bool StreamProcess::ConnectDecode(char *data, size_t len,
     Amf0Helper helper(data, len);
 
     Amf0Obj obj;
-    if (helper.Expect(AMF0_TYPE_OBJECT))
+    if (helper.Expect(AMF_OBJECT))
         obj = helper.GetObj();
     else
         return false;
@@ -150,7 +151,7 @@ bool StreamProcess::FCPublishDecode(
     Amf0Helper helper(data, len);
 
     std::string streamName;
-    if (helper.Expect(AMF0_TYPE_STRING))
+    if (helper.Expect(AMF_STRING))
         streamName = helper.GetString();
     else
         return false;
@@ -193,13 +194,13 @@ bool StreamProcess::PublishDecode(
     Amf0Helper helper(data, len);
 
     std::string streamName;
-    if (helper.Expect(AMF0_TYPE_STRING))
+    if (helper.Expect(AMF_STRING))
         streamName = helper.GetString();
     else
         return false;
 
     std::string app;
-    if (helper.Expect(AMF0_TYPE_STRING))
+    if (helper.Expect(AMF_STRING))
         app = helper.GetString();
     else
         return false;
