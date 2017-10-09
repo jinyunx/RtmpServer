@@ -4,6 +4,18 @@
 // TODO:
 // 1.amf0_data free obj
 
+namespace
+{
+    void PrintBuf(char *buf, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            printf("%x ", buf[i] & 0xff);
+        }
+        printf("\n");
+    }
+}
+
 int StreamProcess::Process(char *data, size_t len)
 {
     RtmpHeaderState state = m_headerDecoder.Decode(data, len);
@@ -126,9 +138,9 @@ void StreamProcess::OnConnect(const PacketMeta &meta,
     if (m_onChunkRecv)
         m_onChunkRecv(meta, &command);
 
-    // SetWinAckSize();
+    SetWinAckSize();
     // SetPeerBandwidth
-    // SetChunkSize();
+    SetChunkSize();
     // ResponseConnect();
 }
 
@@ -211,6 +223,46 @@ void StreamProcess::OnPublish(const PacketMeta &meta,
 
 void StreamProcess::SetWinAckSize()
 {
+    int csId = 2;
+    ChunkMsgHeader msgHeader;
+    msgHeader.length = 4;
+    msgHeader.streamId = 0;
+    msgHeader.timestamp = 0;
+    msgHeader.typeId = 0x05;
 
+    char buf[14 + 4] = { 0 };
+    size_t size = sizeof(buf);
+    m_headerEncoder.Encode(buf, &size, csId, msgHeader);
+
+    ByteStream byteStream;
+    byteStream.Initialize(&buf[size], sizeof(buf) - size);
+    byteStream.Write4Bytes(kWinAckSize);
+
+    PrintBuf(buf, size + byteStream.Pos());
+
+    if (m_onChunkSend)
+        m_onChunkSend(buf, size + byteStream.Pos());
 }
 
+void StreamProcess::SetChunkSize()
+{
+    int csId = 2;
+    ChunkMsgHeader msgHeader;
+    msgHeader.length = 4;
+    msgHeader.streamId = 0;
+    msgHeader.timestamp = 0;
+    msgHeader.typeId = 0x01;
+
+    char buf[14 + 4] = { 0 };
+    size_t size = sizeof(buf);
+    m_headerEncoder.Encode(buf, &size, csId, msgHeader);
+
+    ByteStream byteStream;
+    byteStream.Initialize(&buf[size], sizeof(buf) - size);
+    byteStream.Write4Bytes(kChunkSize);
+
+    PrintBuf(buf, size + byteStream.Pos());
+
+    if (m_onChunkSend)
+        m_onChunkSend(buf, size + byteStream.Pos());
+}

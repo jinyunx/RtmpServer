@@ -13,10 +13,6 @@ enum PacketType
     PacketType_Publish,
     PacketType_Video,
     PacketType_Audio,
-
-    PacketType_WinAckSize,
-    PacketType_ChunkSize,
-    PacketType_Result,
 };
 
 struct PacketMeta
@@ -97,9 +93,14 @@ private:
     void SetPeerBandwidth();
     void SetChunkSize();
 
+    static const int kWinAckSize = 2500000;
+    static const int kChunkSize = 60000;
+
     RtmpHeaderDecode m_headerDecoder;
+    RtmpHeaderEncode m_headerEncoder;
 
     OnChunkRecv m_onChunkRecv;
+    OnChunkSend m_onChunkSend;
 
     ConnectCommand m_connectCommand;
     FCPublishCommand m_fcpublishCommand;
