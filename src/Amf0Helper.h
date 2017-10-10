@@ -64,7 +64,13 @@ public:
     {
         while (m_decoder.pos < m_decoder.buf.size())
         {
-            m_value = amf_load(&m_decoder);
+            try{
+                m_value = amf_load(&m_decoder);
+            }
+            catch (...)
+            {
+                return false;
+            }
             if (m_value.type() != type)
                 continue;
 

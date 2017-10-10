@@ -2,9 +2,6 @@
 #include "Amf0Helper.h"
 #include "stdio.h"
 
-// TODO:
-// 1.amf0_data free obj
-
 namespace
 {
     void PrintBuf(char *buf, size_t size)
@@ -140,7 +137,6 @@ void StreamProcess::OnConnect(const PacketMeta &meta,
         m_onChunkRecv(meta, &command);
 
     SetWinAckSize();
-    // SetPeerBandwidth
     SetChunkSize();
     // ResponseConnect();
 }
