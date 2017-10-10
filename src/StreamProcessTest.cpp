@@ -15,7 +15,7 @@ int main()
                  "\x2e\x35\x36\x3a\x31\x39\x33\x35\x2f\x6c"
                  "\x69\x76\x65\x00\x00\x09";
 
-    StreamProcess sp;
+    StreamProcess sp(0);
     int rt = sp.Process(buf, sizeof(buf));
     sp.Dump();
     printf("rt = %d, bufLen = %ld\n", rt, sizeof(buf));

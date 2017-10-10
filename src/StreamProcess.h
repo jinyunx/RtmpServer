@@ -2,6 +2,7 @@
 #define STREAM_PROCESS_H
 
 #include "RtmpHeader.h"
+#include "Amf0Helper.h"
 #include "boost/function.hpp"
 #include <string>
 
@@ -52,12 +53,17 @@ struct PublishCommand
     std::string app;
 };
 
+typedef boost::function<void(const PacketMeta &, const void *)> OnChunkRecv;
+typedef boost::function<void(const char *, size_t)> OnChunkSend;
+
 class StreamProcess
 {
 public:
-    typedef boost::function<void(const PacketMeta &, const void *)> OnChunkRecv;
-    typedef boost::function<void(const char *, size_t)> OnChunkSend;
+    StreamProcess(const OnChunkSend &onChunkSend);
 
+    // 0 Not enough data
+    // -1 Error
+    // +N size data to parse
     int Process(char *data, size_t len);
     void SetOnChunkRecv(const OnChunkRecv &onChunkRecv);
     void Dump();
@@ -89,12 +95,19 @@ private:
     void OnPublish(const PacketMeta &meta,
                    const PublishCommand &command);
 
+    void SendChunk(int csId, int typeId, unsigned int timestamp,
+                   int streamId, char *data, size_t len);
+
     void SetWinAckSize();
     void SetPeerBandwidth();
     void SetChunkSize();
 
+    void ResponseResult(int txId, const AMFValue &reply = AMFValue(),
+                        const AMFValue &status = AMFValue());
+
     static const int kWinAckSize = 2500000;
     static const int kChunkSize = 60000;
+    static const int kMaxHeaderBytes = 3 + 11;
 
     RtmpHeaderDecode m_headerDecoder;
     RtmpHeaderEncode m_headerEncoder;

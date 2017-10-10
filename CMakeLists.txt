@@ -53,3 +53,17 @@ add_executable(StreamProcessTest
 target_link_libraries(StreamProcessTest
     amfx
     )
+
+add_executable(RtmpServer
+    src/RtmpServer.cpp
+    src/StreamProcess.cpp
+    src/ByteStream.cpp
+    src/RtmpHeader.cpp
+    )
+
+target_link_libraries(RtmpServer
+    amfx
+    muduo_net
+    muduo_base
+    pthread
+    )

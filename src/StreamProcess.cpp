@@ -1,5 +1,4 @@
 #include "StreamProcess.h"
-#include "Amf0Helper.h"
 #include "stdio.h"
 
 namespace
@@ -13,6 +12,10 @@ namespace
         printf("\n");
     }
 }
+
+StreamProcess::StreamProcess(const OnChunkSend &onChunkSend)
+    : m_onChunkSend(onChunkSend)
+{ }
 
 int StreamProcess::Process(char *data, size_t len)
 {
@@ -136,9 +139,20 @@ void StreamProcess::OnConnect(const PacketMeta &meta,
     if (m_onChunkRecv)
         m_onChunkRecv(meta, &command);
 
-    SetWinAckSize();
     SetChunkSize();
-    // ResponseConnect();
+    SetWinAckSize();
+
+    amf_object_t version;
+    version.insert(std::make_pair("fmsVer", std::string("FMS/4,5,1,484")));
+    version.insert(std::make_pair("capabilities", 255.0));
+    version.insert(std::make_pair("mode", 1.0));
+
+    amf_object_t status;
+    status.insert(std::make_pair("level", std::string("status")));
+    status.insert(std::make_pair("code", std::string("NetConnection.Connect.Success")));
+    status.insert(std::make_pair("description", std::string("Connection succeeded.")));
+
+    ResponseResult(command.transactionId, version, status);
 }
 
 bool StreamProcess::FCPublishDecode(
@@ -164,7 +178,18 @@ void StreamProcess::OnFCPublish(const PacketMeta &meta,
     if (m_onChunkRecv)
         m_onChunkRecv(meta, &command);
 
-    // ResponseFCPublish();
+    amf_object_t status;
+    status.insert(std::make_pair("code", std::string("NetStream.Publish.Start")));
+    status.insert(std::make_pair("description", command.streamName));
+
+    Encoder invoke;
+    amf_write(&invoke, std::string("onFCPublish"));
+    amf_write(&invoke, 0.0);
+    amf_write_null(&invoke);
+    amf_write(&invoke, status);
+    SendChunk(5, 0x14, 0, 1, &invoke.buf[0], invoke.buf.size());
+
+    ResponseResult(command.transactionId);
 }
 
 bool StreamProcess::CreateStreamDecode(
@@ -181,7 +206,7 @@ void StreamProcess::OnCreateStream(const PacketMeta &meta,
     if (m_onChunkRecv)
         m_onChunkRecv(meta, &command);
 
-    // ResponseCreateStream();
+    ResponseResult(command.transactionId);
 }
 
 bool StreamProcess::PublishDecode(
@@ -215,51 +240,96 @@ void StreamProcess::OnPublish(const PacketMeta &meta,
     if (m_onChunkRecv)
         m_onChunkRecv(meta, &command);
 
-    // ResponsePublish();
+    amf_object_t status;
+    status.insert(std::make_pair("level", std::string("status")));
+    status.insert(std::make_pair("code", std::string("NetStream.Publish.Start")));
+    status.insert(std::make_pair("description", std::string("Stream is now published.")));
+    status.insert(std::make_pair("details", command.streamName));
+
+    Encoder invoke;
+    amf_write(&invoke, std::string("onStatus"));
+    amf_write(&invoke, 0.0);
+    amf_write_null(&invoke);
+    amf_write(&invoke, status);
+    SendChunk(5, 0x14, 0, 1, &invoke.buf[0], invoke.buf.size());
+
+    ResponseResult(command.transactionId);
+}
+
+void StreamProcess::SendChunk(
+    int csId, int typeId, unsigned int timestamp,
+    int streamId, char *data, size_t len)
+{
+    if (!data || len <= 0)
+        return ;
+
+    ChunkMsgHeader msgHeader;
+    msgHeader.length = 0;
+    msgHeader.streamId = streamId;
+    msgHeader.timestamp = timestamp;
+    msgHeader.typeId = typeId;
+
+    size_t pos = 0;
+    while (pos < len)
+    {
+        std::string buf;
+        int sizeToSend = len - pos;
+        if (sizeToSend > kChunkSize)
+            sizeToSend = kChunkSize;
+
+        msgHeader.length = sizeToSend;
+
+        buf.resize(kMaxHeaderBytes);
+        size_t size = buf.size();
+        m_headerEncoder.Encode(&buf[0], &size, csId, msgHeader);
+        buf.resize(size);
+        PrintBuf(&buf[0], buf.size());
+
+        buf.append(data + pos, sizeToSend);
+
+        PrintBuf(&buf[0], buf.size());
+
+        if (m_onChunkSend)
+            m_onChunkSend(&buf[0], buf.size());
+
+        pos += sizeToSend;
+    }
 }
 
 void StreamProcess::SetWinAckSize()
 {
     int csId = 2;
-    ChunkMsgHeader msgHeader;
-    msgHeader.length = 4;
-    msgHeader.streamId = 0;
-    msgHeader.timestamp = 0;
-    msgHeader.typeId = 0x05;
 
-    char buf[14 + 4] = { 0 };
-    size_t size = sizeof(buf);
-    m_headerEncoder.Encode(buf, &size, csId, msgHeader);
-
+    char buf[4] = { 0 };
     ByteStream byteStream;
-    byteStream.Initialize(&buf[size], sizeof(buf) - size);
+    byteStream.Initialize(buf, sizeof(buf));
     byteStream.Write4Bytes(kWinAckSize);
 
-    PrintBuf(buf, size + byteStream.Pos());
-
-    if (m_onChunkSend)
-        m_onChunkSend(buf, size + byteStream.Pos());
+    SendChunk(csId, 0x05, 0, 0, buf, sizeof(buf));
 }
 
 void StreamProcess::SetChunkSize()
 {
     int csId = 2;
-    ChunkMsgHeader msgHeader;
-    msgHeader.length = 4;
-    msgHeader.streamId = 0;
-    msgHeader.timestamp = 0;
-    msgHeader.typeId = 0x01;
 
-    char buf[14 + 4] = { 0 };
-    size_t size = sizeof(buf);
-    m_headerEncoder.Encode(buf, &size, csId, msgHeader);
-
+    char buf[4] = { 0 };
     ByteStream byteStream;
-    byteStream.Initialize(&buf[size], sizeof(buf) - size);
+    byteStream.Initialize(buf, sizeof(buf));
     byteStream.Write4Bytes(kChunkSize);
 
-    PrintBuf(buf, size + byteStream.Pos());
+    SendChunk(csId, 0x01, 0, 0, buf, sizeof(buf));
+}
 
-    if (m_onChunkSend)
-        m_onChunkSend(buf, size + byteStream.Pos());
+void StreamProcess::ResponseResult(
+    int txId, const AMFValue &reply, const AMFValue &status)
+{
+    int csId = 3;
+
+    Encoder encoder;
+    amf_write(&encoder, std::string("_result"));
+    amf_write(&encoder, (double)txId);
+    amf_write(&encoder, reply);
+    amf_write(&encoder, status);
+
+    SendChunk(csId, 0x14, 0, 0, &encoder.buf[0], encoder.buf.size());
 }

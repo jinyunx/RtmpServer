@@ -3,22 +3,15 @@
 #include "boost/function.hpp"
 #include <arpa/inet.h>
 
-enum HandShakeState
-{
-    HandShakeState_Ok = 0,
-    HandShakeState_NotEnoughData,
-    HandShakeState_Error
-};
+typedef boost::function<void(const char *, size_t)> OnC0C1;
+typedef boost::function<void(const char *, size_t)> OnS0S1S2;
+typedef boost::function<void(const char *, size_t)> OnC2;
 
 class HandShake
 {
 public:
-    typedef boost::function<void(const char *data, size_t len)> OnC0C1;
-    typedef boost::function<void(const char *data, size_t len)> OnS0S1S2;
-    typedef boost::function<void(const char *data, size_t len)> OnC2;
-
-    HandShake()
-        : m_complete(false), m_waitC2(false), m_S0S1S2(0)
+    HandShake(const OnS0S1S2 & onS0S1S2)
+        : m_complete(false), m_waitC2(false), m_S0S1S2(0), m_onS0S1S2(onS0S1S2)
     {
         m_S0S1S2 = new char[kS0S1S2Size];
     }
@@ -28,28 +21,26 @@ public:
         delete[]m_S0S1S2;
     }
 
-    HandShakeState Parse(char *data, size_t len)
+    int Parse(char *data, size_t len)
     {
         if (m_waitC2)
         {
-            if (len < kC0C1C2Size)
-                return HandShakeState_NotEnoughData;
+            if (len < kC2Size)
+                return 0;
             if (m_onC2)
-                m_onC2(data, kC0C1C2Size);
+                m_onC2(data, kC2Size);
             m_complete = true;
-            return HandShakeState_Ok;
+            return kC2Size;
         }
 
         if (!data || len < kC0C1Size)
-            return HandShakeState_NotEnoughData;
+            return 0;
 
         if (data[0] != kVersion)
-            return HandShakeState_Error;
+            return -1;
 
         if (m_onC0C1)
-        {
             m_onC0C1(data, kC0C1Size);
-        }
 
         SetS0S1S2(data);
 
@@ -57,7 +48,7 @@ public:
             m_onS0S1S2(m_S0S1S2, kS0S1S2Size);
 
         m_waitC2 = true;
-        return HandShakeState_Ok;
+        return kC0C1Size;
     }
 
     void SetOnC0C1(const OnC0C1 & onC0C1)
@@ -77,7 +68,7 @@ public:
 
 private:
     static const int kC0C1Size = 1537;
-    static const int kC0C1C2Size = 1537 + 1536;
+    static const int kC2Size = 1536;
 
     static const int kVersion = 3;
     static const int kS0S1S2Size = 1537 + 1536;
@@ -94,12 +85,10 @@ private:
 
         // Version
         m_S0S1S2[0] = kVersion;
+        *(int*)&(m_S0S1S2[1]) = 0;
+        *(int*)&(m_S0S1S2[5]) = 0;
 
-        // Server time
-        *(int*)&(m_S0S1S2[1]) = htonl(time(0));
-
-        // Client time
-        *(int*)&(m_S0S1S2[5]) = *(int*)&(C0C1[1]);
+        memcpy(m_S0S1S2 + kC0C1Size, &C0C1[1], kC0C1Size - 1);
     }
 
     bool m_complete;
