@@ -84,56 +84,67 @@ namespace
 }
 
 StreamProcess::StreamProcess(const OnChunkSend &onChunkSend)
-    : m_stage(Stage_Header), m_sendChunkSize(kSendChunkSize),
-      m_revcChunkSize(kRecvChunkSize), m_onChunkSend(onChunkSend)
+    : m_sendChunkSize(kSendChunkSize), m_revcChunkSize(kRecvChunkSize),
+      m_onChunkSend(onChunkSend)
 { }
 
 int StreamProcess::Process(char *data, size_t len)
 {
-    if (m_stage == Stage_Header)
+    RtmpHeaderDecode headerDecoder;
+    RtmpHeaderState state = headerDecoder.DecodeCsId(data, len);
+    if (state != RtmpHeaderState_Ok)
+        return state;
+    unsigned int csId = headerDecoder.GetBasicHeader().csId;
+
+    PacketContext &context = m_packetContext[csId];
+    if (context.stage == Stage_Header)
     {
-        RtmpHeaderState state = m_headerDecoder.Decode(data, len);
+        RtmpHeaderState state = context.headerDecoder.Decode(data, len);
 
         if (state == RtmpHeaderState_Error)
             return -1;
         else if (state == RtmpHeaderState_NotEnoughData)
             return 0;
 
-        m_headerDecoder.Dump();
-        m_stage = Stage_Body;
-        return m_headerDecoder.GetConsumeDataLen();
+        context.headerDecoder.Dump();
+        context.stage = Stage_Body;
     }
 
-    size_t bodyLen = m_headerDecoder.GetMsgHeader().length;
-    size_t needLen = GetNeedLength(bodyLen);
+    // Skip header
+    data += context.headerDecoder.GetConsumeDataLen();
+    len -= context.headerDecoder.GetConsumeDataLen();
+
+    size_t msgLen = context.headerDecoder.GetMsgHeader().length;
+    size_t needLen = msgLen - context.payload.size();
+
+    if (needLen > m_revcChunkSize)
+        needLen = m_revcChunkSize;
 
     if (len < needLen)
         return 0;
 
-    std::string buf;
-    char *p = MergeChunk(buf, data, needLen);
+    context.payload.append(data, needLen);
 
-    PacketMeta meta;
-    meta.basicHeader = m_headerDecoder.GetBasicHeader();
-    meta.extendedTimestamp = m_headerDecoder.GetExtendedTimestamp();
-    meta.msgHeader = m_headerDecoder.GetMsgHeader();
-
-    switch (meta.msgHeader.typeId)
+    if (context.payload.size() == msgLen)
     {
-    case 0x14:
-        if (!Amf0Decode(p, bodyLen, meta))
-            return -1;
-        break;
+        switch (context.headerDecoder.GetMsgHeader().typeId)
+        {
+        case 0x14:
+            if (!Amf0Decode(&context.payload[0], context.payload.size(),
+                            context))
+                return -1;
+            break;
 
-    case 0x09:
-        WriteH264(p, bodyLen);
-        break;
+        case 0x09:
+            WriteH264(&context.payload[0], context.payload.size());
+            break;
 
-    default:
-        break;
+        default:
+            break;
+        }
     }
 
-    m_stage = Stage_Header;
+    context.stage = Stage_Header;
     return needLen;
 }
 
@@ -176,7 +187,7 @@ char * StreamProcess::MergeChunk(std::string &buf, char *data, size_t len)
     return &buf[0];
 }
 
-bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
+bool StreamProcess::Amf0Decode(char *data, size_t len, PacketContext &context)
 {
     Amf0Helper helper(data, len);
 
@@ -198,8 +209,8 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
                            name, transactionId))
             return false;
 
-        meta.type = PacketType_Connect;
-        OnConnect(meta, m_connectCommand);
+        context.type = PacketType_Connect;
+        OnConnect(context, m_connectCommand);
     }
     else if (name == "FCPublish")
     {
@@ -207,8 +218,8 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
                              name, transactionId))
             return false;
 
-        meta.type = PacketType_FCPublish;
-        OnFCPublish(meta, m_fcpublishCommand);
+        context.type = PacketType_FCPublish;
+        OnFCPublish(context, m_fcpublishCommand);
     }
     else if (name == "createStream")
     {
@@ -216,8 +227,8 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
                                 name, transactionId))
             return false;
 
-        meta.type = PacketType_CreateStream;
-        OnCreateStream(meta, m_csCommand);
+        context.type = PacketType_CreateStream;
+        OnCreateStream(context, m_csCommand);
     }
     else if (name == "publish")
     {
@@ -225,8 +236,8 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
                            name, transactionId))
             return false;
 
-        meta.type = PacketType_Publish;
-        OnPublish(meta, m_publishCommand);
+        context.type = PacketType_Publish;
+        OnPublish(context, m_publishCommand);
     }
 
     return true;
@@ -251,11 +262,11 @@ bool StreamProcess::ConnectDecode(char *data, size_t len,
     return true;
 }
 
-void StreamProcess::OnConnect(const PacketMeta &meta,
+void StreamProcess::OnConnect(const PacketContext &context,
                               const ConnectCommand &command)
 {
     if (m_onChunkRecv)
-        m_onChunkRecv(meta, &command);
+        m_onChunkRecv(context, &command);
 
     SetChunkSize();
     SetWinAckSize();
@@ -290,11 +301,11 @@ bool StreamProcess::FCPublishDecode(
     return true;
 }
 
-void StreamProcess::OnFCPublish(const PacketMeta &meta,
+void StreamProcess::OnFCPublish(const PacketContext &context,
                                 const FCPublishCommand &command)
 {
     if (m_onChunkRecv)
-        m_onChunkRecv(meta, &command);
+        m_onChunkRecv(context, &command);
 
     amf_object_t status;
     status.insert(std::make_pair("code", std::string("NetStream.Publish.Start")));
@@ -321,11 +332,11 @@ bool StreamProcess::CreateStreamDecode(
     return true;
 }
 
-void StreamProcess::OnCreateStream(const PacketMeta &meta,
+void StreamProcess::OnCreateStream(const PacketContext &context,
                                    const CreateStreamCommand &command)
 {
     if (m_onChunkRecv)
-        m_onChunkRecv(meta, &command);
+        m_onChunkRecv(context, &command);
 
     printf("OnCreateStream result\n");
     ResponseResult(command.transactionId);
@@ -356,11 +367,11 @@ bool StreamProcess::PublishDecode(
     return true;
 }
 
-void StreamProcess::OnPublish(const PacketMeta &meta,
+void StreamProcess::OnPublish(const PacketContext &context,
                               const PublishCommand &command)
 {
     if (m_onChunkRecv)
-        m_onChunkRecv(meta, &command);
+        m_onChunkRecv(context, &command);
 
     amf_object_t status;
     status.insert(std::make_pair("level", std::string("status")));

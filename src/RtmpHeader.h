@@ -73,6 +73,7 @@ public:
     { }
 
     RtmpHeaderState Decode(char *data, size_t len);
+    RtmpHeaderState DecodeCsId(char *data, size_t len);
 
     ChunkMsgHeader GetMsgHeader() const;
     ChunkBasicHeader GetBasicHeader() const;

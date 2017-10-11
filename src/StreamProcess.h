@@ -8,6 +8,7 @@
 
 enum PacketType
 {
+    PacketType_NONE,
     PacketType_Connect,
     PacketType_FCPublish,
     PacketType_CreateStream,
@@ -22,12 +23,17 @@ enum Stage
     Stage_Body,
 };
 
-struct PacketMeta
+struct PacketContext
 {
-    ChunkBasicHeader basicHeader;
-    ChunkMsgHeader msgHeader;
-    ExtendedTimestamp extendedTimestamp;
+    Stage stage;
     PacketType type;
+    RtmpHeaderDecode headerDecoder;
+    std::string payload;
+
+    PacketContext()
+        : stage(Stage_Header),
+          type(PacketType_NONE)
+    { }
 };
 
 struct ConnectCommand
@@ -59,7 +65,10 @@ struct PublishCommand
     std::string app;
 };
 
-typedef boost::function<void(const PacketMeta &, const void *)> OnChunkRecv;
+// CS ID to PacketContext
+typedef std::map<int, PacketContext> PacketContextMap;
+
+typedef boost::function<void(const PacketContext &, const void *)> OnChunkRecv;
 typedef boost::function<void(const char *, size_t)> OnChunkSend;
 
 class StreamProcess
@@ -78,30 +87,30 @@ private:
     size_t GetNeedLength(size_t body);
     char *MergeChunk(std::string &buf, char *data, size_t len);
 
-    bool Amf0Decode(char *data, size_t len, PacketMeta &meta);
+    bool Amf0Decode(char *data, size_t len, PacketContext &context);
 
     bool ConnectDecode(char *data, size_t len,
                        const std::string &name,
                        int transactionId);
-    void OnConnect(const PacketMeta &meta,
+    void OnConnect(const PacketContext &context,
                    const ConnectCommand &command);
 
     bool FCPublishDecode(char *data, size_t len,
                          const std::string &name,
                          int transactionId);
-    void OnFCPublish(const PacketMeta &meta,
+    void OnFCPublish(const PacketContext &context,
                      const FCPublishCommand &command);
 
     bool CreateStreamDecode(char *data, size_t len,
                             const std::string &name,
                             int transactionId);
-    void OnCreateStream(const PacketMeta &meta,
+    void OnCreateStream(const PacketContext &context,
                         const CreateStreamCommand &command);
 
     bool PublishDecode(char *data, size_t len,
                        const std::string &name,
                        int transactionId);
-    void OnPublish(const PacketMeta &meta,
+    void OnPublish(const PacketContext &context,
                    const PublishCommand &command);
 
     void SendChunk(int csId, int typeId, unsigned int timestamp,
@@ -119,12 +128,10 @@ private:
     static const int kRecvChunkSize = 128;
     static const int kMaxHeaderBytes = 3 + 11;
 
-    Stage m_stage;
-
     size_t m_sendChunkSize;
     size_t m_revcChunkSize;
 
-    RtmpHeaderDecode m_headerDecoder;
+    PacketContextMap m_packetContext;
     RtmpHeaderEncode m_headerEncoder;
 
     OnChunkRecv m_onChunkRecv;

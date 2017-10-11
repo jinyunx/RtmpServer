@@ -26,6 +26,13 @@ RtmpHeaderState RtmpHeaderDecode::Decode(
     return state;
 }
 
+RtmpHeaderState RtmpHeaderDecode::DecodeCsId(char * data, size_t len)
+{
+    if (!m_byteStream.Initialize(data, len))
+        return RtmpHeaderState_NotEnoughData;
+    return DecodeBasicHeader();
+}
+
 ChunkMsgHeader RtmpHeaderDecode::GetMsgHeader() const
 {
     return m_msgHeader;
