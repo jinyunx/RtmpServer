@@ -8,42 +8,133 @@ namespace
         for (size_t i = 0; i < size; ++i)
         {
             printf("%x ", buf[i] & 0xff);
+            if ((i + 1) % 16 == 0)
+                printf("\n");
         }
         printf("\n");
+    }
+
+    void WriteH264(char *buf, size_t size)
+    {
+        static FILE *fd = fopen("dump.h264", "wb");
+        size_t useSize = 0;
+
+        if (buf[1] == 0x00)
+        {
+            // sps pps
+            // Skip 1.frame type and codec id[1]
+            //      2.AVCPacketType[1]
+            //      3.CompositionTime[3]
+            //      4.version[1]
+            //      5.profile indication[1]
+            //      6.profile compatibility[1]
+            //      7.level indication[1]
+            //      8.length size munus one[1]
+            //      9.number of sps[1]
+            buf += 11;
+            useSize += 11;
+
+            while (useSize < size)
+            {
+                int length = 0;
+                char *p = (char *)&length;
+                p[0] = buf[1];
+                p[1] = buf[0];
+
+                // 00 00 00 01
+                fwrite("\x00\x00\x00\x01", 4, 1, fd);
+                
+                fwrite(buf+2, length, 1, fd);
+
+                // skip 01
+                buf += length + 2 + 1;
+                useSize += length + 2 + 1;
+            }
+        }
+        else
+        {
+            // Skip 1.frame type and codec id[1]
+            //      2.AVCPacketType[1]
+            //      3.CompositionTime[3]
+            buf += 1 + 1 + 3;
+            useSize += 5;
+
+            while (useSize < size)
+            {
+                int length = 0;
+                char *p = (char *)&length;
+                p[0] = buf[3];
+                p[1] = buf[2];
+                p[2] = buf[1];
+                p[3] = buf[0];
+
+                // 00 00 00 01
+                buf[0] = 0;
+                buf[1] = 0;
+                buf[2] = 0;
+                buf[3] = 1;
+
+                fwrite(buf, length + 4, 1, fd);
+
+                buf += length + 4;
+                useSize += length + 4;
+            }
+        }
     }
 }
 
 StreamProcess::StreamProcess(const OnChunkSend &onChunkSend)
-    : m_onChunkSend(onChunkSend)
+    : m_stage(Stage_Header), m_sendChunkSize(kSendChunkSize),
+      m_revcChunkSize(kRecvChunkSize), m_onChunkSend(onChunkSend)
 { }
 
 int StreamProcess::Process(char *data, size_t len)
 {
-    RtmpHeaderState state = m_headerDecoder.Decode(data, len);
+    if (m_stage == Stage_Header)
+    {
+        RtmpHeaderState state = m_headerDecoder.Decode(data, len);
 
-    if (state == RtmpHeaderState_Error)
-        return -1;
-    else if (state == RtmpHeaderState_NotEnoughData)
-        return 0;
+        if (state == RtmpHeaderState_Error)
+            return -1;
+        else if (state == RtmpHeaderState_NotEnoughData)
+            return 0;
 
-    m_headerDecoder.Dump();
+        m_headerDecoder.Dump();
+        m_stage = Stage_Body;
+        return m_headerDecoder.GetConsumeDataLen();
+    }
 
-    size_t headLen = m_headerDecoder.GetConsumeDataLen();
     size_t bodyLen = m_headerDecoder.GetMsgHeader().length;
-    size_t needLen = headLen + bodyLen;
+    size_t needLen = GetNeedLength(bodyLen);
 
     if (len < needLen)
         return 0;
+
+    std::string buf;
+    char *p = MergeChunk(buf, data, needLen);
 
     PacketMeta meta;
     meta.basicHeader = m_headerDecoder.GetBasicHeader();
     meta.extendedTimestamp = m_headerDecoder.GetExtendedTimestamp();
     meta.msgHeader = m_headerDecoder.GetMsgHeader();
 
-    if (!Amf0Decode(data + headLen, bodyLen, meta))
-        return -1;
-    else
-        return needLen;
+    switch (meta.msgHeader.typeId)
+    {
+    case 0x14:
+        if (!Amf0Decode(p, bodyLen, meta))
+            return -1;
+        break;
+
+    case 0x09:
+        WriteH264(p, bodyLen);
+        break;
+
+    default:
+        break;
+    }
+
+    m_stage = Stage_Header;
+    return needLen;
 }
 
 void StreamProcess::SetOnChunkRecv(const OnChunkRecv &onChunkRecv)
@@ -56,6 +147,33 @@ void StreamProcess::Dump()
     printf("connect name: %s, id: %d, app: %s, tcUrl: %s\n",
            m_connectCommand.name.c_str(), m_connectCommand.transactionId,
            m_connectCommand.app.c_str(), m_connectCommand.tcUrl.c_str());
+}
+
+size_t StreamProcess::GetNeedLength(size_t body)
+{
+    if (body <= m_revcChunkSize)
+        return body;
+
+    return body + (body-1) / m_revcChunkSize;
+}
+
+char * StreamProcess::MergeChunk(std::string &buf, char *data, size_t len)
+{
+    if (len <= m_revcChunkSize)
+        return data;
+
+    size_t i = 0;
+    while (i < len)
+    {
+        size_t copy = len - i;
+        if (copy > m_revcChunkSize)
+            copy = m_revcChunkSize;
+        buf.append(data + i, copy);
+
+        // Add 1 to skip basic header
+        i += copy + 1;
+    }
+    return &buf[0];
 }
 
 bool StreamProcess::Amf0Decode(char *data, size_t len, PacketMeta &meta)
@@ -187,8 +305,11 @@ void StreamProcess::OnFCPublish(const PacketMeta &meta,
     amf_write(&invoke, 0.0);
     amf_write_null(&invoke);
     amf_write(&invoke, status);
+
+    printf("onFCPublish\n");
     SendChunk(5, 0x14, 0, 1, &invoke.buf[0], invoke.buf.size());
 
+    printf("onFCPublish result\n");
     ResponseResult(command.transactionId);
 }
 
@@ -206,6 +327,7 @@ void StreamProcess::OnCreateStream(const PacketMeta &meta,
     if (m_onChunkRecv)
         m_onChunkRecv(meta, &command);
 
+    printf("OnCreateStream result\n");
     ResponseResult(command.transactionId);
 }
 
@@ -251,8 +373,12 @@ void StreamProcess::OnPublish(const PacketMeta &meta,
     amf_write(&invoke, 0.0);
     amf_write_null(&invoke);
     amf_write(&invoke, status);
+
+
+    printf("OnPublish\n");
     SendChunk(5, 0x14, 0, 1, &invoke.buf[0], invoke.buf.size());
 
+    printf("OnPublish result\n");
     ResponseResult(command.transactionId);
 }
 
@@ -264,7 +390,7 @@ void StreamProcess::SendChunk(
         return ;
 
     ChunkMsgHeader msgHeader;
-    msgHeader.length = 0;
+    msgHeader.length = len;
     msgHeader.streamId = streamId;
     msgHeader.timestamp = timestamp;
     msgHeader.typeId = typeId;
@@ -274,16 +400,13 @@ void StreamProcess::SendChunk(
     {
         std::string buf;
         int sizeToSend = len - pos;
-        if (sizeToSend > kChunkSize)
-            sizeToSend = kChunkSize;
-
-        msgHeader.length = sizeToSend;
+        if (sizeToSend > kSendChunkSize)
+            sizeToSend = kSendChunkSize;
 
         buf.resize(kMaxHeaderBytes);
         size_t size = buf.size();
         m_headerEncoder.Encode(&buf[0], &size, csId, msgHeader);
         buf.resize(size);
-        PrintBuf(&buf[0], buf.size());
 
         buf.append(data + pos, sizeToSend);
 
@@ -315,7 +438,7 @@ void StreamProcess::SetChunkSize()
     char buf[4] = { 0 };
     ByteStream byteStream;
     byteStream.Initialize(buf, sizeof(buf));
-    byteStream.Write4Bytes(kChunkSize);
+    byteStream.Write4Bytes(kSendChunkSize);
 
     SendChunk(csId, 0x01, 0, 0, buf, sizeof(buf));
 }

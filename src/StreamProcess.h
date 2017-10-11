@@ -16,6 +16,12 @@ enum PacketType
     PacketType_Audio,
 };
 
+enum Stage
+{
+    Stage_Header,
+    Stage_Body,
+};
+
 struct PacketMeta
 {
     ChunkBasicHeader basicHeader;
@@ -69,6 +75,9 @@ public:
     void Dump();
 
 private:
+    size_t GetNeedLength(size_t body);
+    char *MergeChunk(std::string &buf, char *data, size_t len);
+
     bool Amf0Decode(char *data, size_t len, PacketMeta &meta);
 
     bool ConnectDecode(char *data, size_t len,
@@ -106,8 +115,14 @@ private:
                         const AMFValue &status = AMFValue());
 
     static const int kWinAckSize = 2500000;
-    static const int kChunkSize = 60000;
+    static const int kSendChunkSize = 60000;
+    static const int kRecvChunkSize = 128;
     static const int kMaxHeaderBytes = 3 + 11;
+
+    Stage m_stage;
+
+    size_t m_sendChunkSize;
+    size_t m_revcChunkSize;
 
     RtmpHeaderDecode m_headerDecoder;
     RtmpHeaderEncode m_headerEncoder;
