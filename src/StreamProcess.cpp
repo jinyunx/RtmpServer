@@ -120,6 +120,8 @@ int StreamProcess::Process(char *data, size_t len)
     if (needLen > m_revcChunkSize)
         needLen = m_revcChunkSize;
 
+    printf("len = %d, needLen = %d\n", len, needLen);
+
     if (len < needLen)
         return 0;
 
@@ -142,10 +144,12 @@ int StreamProcess::Process(char *data, size_t len)
         default:
             break;
         }
+
+        context.payload.clear();
     }
 
     context.stage = Stage_Header;
-    return needLen;
+    return needLen + context.headerDecoder.GetConsumeDataLen();
 }
 
 void StreamProcess::SetOnChunkRecv(const OnChunkRecv &onChunkRecv)
@@ -281,6 +285,7 @@ void StreamProcess::OnConnect(const PacketContext &context,
     status.insert(std::make_pair("code", std::string("NetConnection.Connect.Success")));
     status.insert(std::make_pair("description", std::string("Connection succeeded.")));
 
+    printf("OnConnect response\n");
     ResponseResult(command.transactionId, version, status);
 }
 
@@ -439,6 +444,7 @@ void StreamProcess::SetWinAckSize()
     byteStream.Initialize(buf, sizeof(buf));
     byteStream.Write4Bytes(kWinAckSize);
 
+    printf("SetWinAckSize\n");
     SendChunk(csId, 0x05, 0, 0, buf, sizeof(buf));
 }
 
@@ -451,6 +457,7 @@ void StreamProcess::SetChunkSize()
     byteStream.Initialize(buf, sizeof(buf));
     byteStream.Write4Bytes(kSendChunkSize);
 
+    printf("SetChunkSize\n");
     SendChunk(csId, 0x01, 0, 0, buf, sizeof(buf));
 }
 
