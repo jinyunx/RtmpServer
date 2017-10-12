@@ -13,6 +13,8 @@ enum PacketType
     PacketType_FCPublish,
     PacketType_CreateStream,
     PacketType_Publish,
+    PacketType_MetaData,
+    PacketType_Spspps,
     PacketType_Video,
     PacketType_Audio,
 };
@@ -84,6 +86,7 @@ public:
     void Dump();
 
 private:
+    bool Dispatch(PacketContext &context);
     size_t GetNeedLength(size_t body);
     char *MergeChunk(std::string &buf, char *data, size_t len);
 
@@ -112,6 +115,15 @@ private:
                        int transactionId);
     void OnPublish(const PacketContext &context,
                    const PublishCommand &command);
+
+    void OnMetaData(const PacketContext &context,
+                    const char *data, size_t len);
+    void OnSpspps(const PacketContext &context,
+                  const char *data, size_t len);
+    void OnVideo(const PacketContext &context,
+                 const char *data, size_t len);
+    void OnAudio(const PacketContext &context,
+                 const char *data, size_t len);
 
     void SendChunk(int csId, int typeId, unsigned int timestamp,
                    int streamId, char *data, size_t len);

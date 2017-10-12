@@ -59,6 +59,7 @@ add_executable(RtmpServer
     src/StreamProcess.cpp
     src/ByteStream.cpp
     src/RtmpHeader.cpp
+    src/DataCache.cpp
     )
 
 target_link_libraries(RtmpServer

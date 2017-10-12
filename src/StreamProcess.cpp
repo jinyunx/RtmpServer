@@ -120,7 +120,7 @@ int StreamProcess::Process(char *data, size_t len)
     if (needLen > m_revcChunkSize)
         needLen = m_revcChunkSize;
 
-    printf("len = %d, needLen = %d\n", len, needLen);
+    printf("len = %ld, needLen = %ld\n", len, needLen);
 
     if (len < needLen)
         return 0;
@@ -129,22 +129,7 @@ int StreamProcess::Process(char *data, size_t len)
 
     if (context.payload.size() == msgLen)
     {
-        switch (context.headerDecoder.GetMsgHeader().typeId)
-        {
-        case 0x14:
-            if (!Amf0Decode(&context.payload[0], context.payload.size(),
-                            context))
-                return -1;
-            break;
-
-        case 0x09:
-            WriteH264(&context.payload[0], context.payload.size());
-            break;
-
-        default:
-            break;
-        }
-
+        Dispatch(context);
         context.payload.clear();
     }
 
@@ -162,6 +147,26 @@ void StreamProcess::Dump()
     printf("connect name: %s, id: %d, app: %s, tcUrl: %s\n",
            m_connectCommand.name.c_str(), m_connectCommand.transactionId,
            m_connectCommand.app.c_str(), m_connectCommand.tcUrl.c_str());
+}
+
+bool StreamProcess::Dispatch(PacketContext &context)
+{
+    switch (context.headerDecoder.GetMsgHeader().typeId)
+    {
+    case 0x14:
+        if (!Amf0Decode(&context.payload[0], context.payload.size(),
+            context))
+            return false;
+        break;
+
+    case 0x09:
+        WriteH264(&context.payload[0], context.payload.size());
+        break;
+
+    default:
+        break;
+    }
+    return true;
 }
 
 size_t StreamProcess::GetNeedLength(size_t body)
@@ -325,7 +330,7 @@ void StreamProcess::OnFCPublish(const PacketContext &context,
     printf("onFCPublish\n");
     SendChunk(5, 0x14, 0, 1, &invoke.buf[0], invoke.buf.size());
 
-    printf("onFCPublish result\n");
+    printf("onFCPublish result: %d\n", command.transactionId);
     ResponseResult(command.transactionId);
 }
 
@@ -396,6 +401,30 @@ void StreamProcess::OnPublish(const PacketContext &context,
 
     printf("OnPublish result\n");
     ResponseResult(command.transactionId);
+}
+
+void StreamProcess::OnMetaData(const PacketContext &context,
+                               const char *data, size_t len)
+{
+    
+}
+
+void StreamProcess::OnSpspps(const PacketContext &context,
+                             const char *data, size_t len)
+{
+
+}
+
+void StreamProcess::OnVideo(const PacketContext &context,
+                            const char *data, size_t len)
+{
+
+}
+
+void StreamProcess::OnAudio(const PacketContext &context,
+                            const char *data, size_t len)
+{
+
 }
 
 void StreamProcess::SendChunk(
