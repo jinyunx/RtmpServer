@@ -11,13 +11,24 @@ void DataCache::SetMetaData(const std::string &app,
     PushToPlayer(app, streamName, data, len);
 }
 
-void DataCache::SetSpsPps(const std::string &app,
+void DataCache::SetSpspps(const std::string &app,
                           const std::string &streamName,
                           const char *data, size_t len)
 {
     std::string appStream = GetAppStream(app, streamName);
     m_streamCache[appStream].spspps.clear();
     m_streamCache[appStream].spspps.append(data, len);
+
+    PushToPlayer(app, streamName, data, len);
+}
+
+void DataCache::SetSeqheader(const std::string & app,
+                             const std::string & streamName,
+                             const char * data, size_t len)
+{
+    std::string appStream = GetAppStream(app, streamName);
+    m_streamCache[appStream].seqheader.clear();
+    m_streamCache[appStream].seqheader.append(data, len);
 
     PushToPlayer(app, streamName, data, len);
 }
@@ -60,9 +71,22 @@ void DataCache::AddPlayer(const std::string &app, const std::string &streamName,
     m_streamCache[appStream].players.insert(player);
 
     if (m_streamCache[appStream].meta.size())
-        player(&m_streamCache[appStream].meta[0], m_streamCache[appStream].meta.size());
+    {
+        player(&m_streamCache[appStream].meta[0],
+               m_streamCache[appStream].meta.size());
+    }
+
     if (m_streamCache[appStream].spspps.size())
-        player(&m_streamCache[appStream].spspps[0], m_streamCache[appStream].spspps.size());
+    {
+        player(&m_streamCache[appStream].spspps[0],
+               m_streamCache[appStream].spspps.size());
+    }
+
+    if (m_streamCache[appStream].seqheader.size())
+    {
+        player(&m_streamCache[appStream].seqheader[0],
+               m_streamCache[appStream].seqheader.size());
+    }
 
     for (size_t i = 0; i < m_streamCache[appStream].gop.size(); ++i)
     {

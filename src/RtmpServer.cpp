@@ -1,6 +1,5 @@
 #include "RtmpServer.h"
 #include "HandShake.h"
-#include "StreamProcess.h"
 #include "boost/bind.hpp"
 #include "boost/shared_ptr.hpp"
 #include <muduo/base/Logging.h>
@@ -36,8 +35,8 @@ void RtmpServer::Start()
 void RtmpServer::OnConnection(const muduo::net::TcpConnectionPtr &conn)
 {
     LOG_INFO << "RtmpServer - " << conn->peerAddress().toIpPort() << " -> "
-        << conn->localAddress().toIpPort() << " is "
-        << (conn->connected() ? "UP" : "DOWN");
+             << conn->localAddress().toIpPort() << " is "
+             << (conn->connected() ? "UP" : "DOWN");
 
     if (conn->connected())
     {
@@ -45,6 +44,10 @@ void RtmpServer::OnConnection(const muduo::net::TcpConnectionPtr &conn)
                                                    this, conn, _1, _2),
                                        boost::bind(&RtmpServer::SendMessage,
                                                    this, conn, _1, _2)));
+
+        context->streamProcess.SetOnChunkRecv(boost::bind(&RtmpServer::RecvMessage,
+                                              this, conn, _1, _2));
+
         conn->setContext(context);
     }
 }
@@ -100,6 +103,51 @@ void RtmpServer::SendMessage(const muduo::net::TcpConnectionPtr &conn,
                              const char *data, size_t len)
 {
     conn->send(data, len);
+}
+
+void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
+                             const PacketContext &packet, const void *info)
+{
+    ContextPtr context = boost::any_cast<ContextPtr>(conn->getContext());
+    const std::string &app = context->streamProcess.GetApp();
+    const std::string &streamName = context->streamProcess.GetStreamName();
+
+    switch (packet.type)
+    {
+    case PacketType_MetaData:
+    {
+        m_dataCache.SetMetaData(app, streamName, &packet.payload[0],
+                                packet.payload.size());
+        break;
+    }
+
+    case PacketType_Video:
+    {
+        VideoInfo *vinfo = (VideoInfo *)info;
+        if(vinfo->isSpspps)
+            m_dataCache.SetSpspps(app, streamName, &packet.payload[0],
+                                  packet.payload.size());
+        else
+            m_dataCache.AddVideo(app, streamName, vinfo->isKeyFrame,
+                                 &packet.payload[0], packet.payload.size());
+        break;
+    }
+
+    case PacketType_Audio:
+    {
+        AudioInfo *ainfo = (AudioInfo *)info;
+        if (ainfo->isSeqHeader)
+            m_dataCache.SetSeqheader(app, streamName, &packet.payload[0],
+                                     packet.payload.size());
+        else
+            m_dataCache.AddAudio(app, streamName, &packet.payload[0],
+                                 packet.payload.size());
+        break;
+    }
+
+    default:
+        break;
+    }
 }
 
 int main()

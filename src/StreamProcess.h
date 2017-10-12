@@ -14,7 +14,6 @@ enum PacketType
     PacketType_CreateStream,
     PacketType_Publish,
     PacketType_MetaData,
-    PacketType_Spspps,
     PacketType_Video,
     PacketType_Audio,
 };
@@ -38,12 +37,35 @@ struct PacketContext
     { }
 };
 
+struct VideoInfo
+{
+    bool isKeyFrame;
+    bool isSpspps;
+
+    VideoInfo()
+        : isKeyFrame(false), isSpspps(false)
+    { }
+};
+
+struct AudioInfo
+{
+    bool isSeqHeader;
+
+    AudioInfo()
+        : isSeqHeader(false)
+    { }
+};
+
 struct ConnectCommand
 {
     std::string name;
     int transactionId;
     std::string app;
     std::string tcUrl;
+
+    ConnectCommand()
+        : transactionId(0)
+    { }
 };
 
 struct FCPublishCommand
@@ -51,20 +73,32 @@ struct FCPublishCommand
     std::string name;
     int transactionId;
     std::string streamName;
+
+    FCPublishCommand()
+        : transactionId(0)
+    { }
 };
 
 struct CreateStreamCommand
 {
     std::string name;
     int transactionId;
+
+    CreateStreamCommand()
+        : transactionId(0)
+    { }
 };
 
 struct PublishCommand
 {
     std::string name;
     int transactionId;
-    std::string streamName;
     std::string app;
+    std::string streamName;
+
+    PublishCommand()
+        : transactionId(0)
+    { }
 };
 
 // CS ID to PacketContext
@@ -84,6 +118,9 @@ public:
     int Process(char *data, size_t len);
     void SetOnChunkRecv(const OnChunkRecv &onChunkRecv);
     void Dump();
+
+    const std::string &GetApp();
+    const std::string &GetStreamName();
 
 private:
     bool Dispatch(PacketContext &context);
@@ -116,13 +153,11 @@ private:
     void OnPublish(const PacketContext &context,
                    const PublishCommand &command);
 
-    void OnMetaData(const PacketContext &context,
+    void OnMetaData(PacketContext &context,
                     const char *data, size_t len);
-    void OnSpspps(const PacketContext &context,
-                  const char *data, size_t len);
-    void OnVideo(const PacketContext &context,
+    void OnVideo(PacketContext &context,
                  const char *data, size_t len);
-    void OnAudio(const PacketContext &context,
+    void OnAudio(PacketContext &context,
                  const char *data, size_t len);
 
     void SendChunk(int csId, int typeId, unsigned int timestamp,
@@ -142,6 +177,9 @@ private:
 
     size_t m_sendChunkSize;
     size_t m_revcChunkSize;
+
+    std::string m_app;
+    std::string m_streamName;
 
     PacketContextMap m_packetContext;
     RtmpHeaderEncode m_headerEncoder;

@@ -1,6 +1,11 @@
 #include "StreamProcess.h"
 #include "stdio.h"
 
+#define MSG_TYPE_COMMAND 0x14
+#define MSG_TYPE_METADATA 0x12
+#define MSG_TYPE_VIDEO 0x09
+#define MSG_TYPE_AUDIO 0x08
+
 namespace
 {
     void PrintBuf(char *buf, size_t size)
@@ -149,18 +154,40 @@ void StreamProcess::Dump()
            m_connectCommand.app.c_str(), m_connectCommand.tcUrl.c_str());
 }
 
+const std::string & StreamProcess::GetApp()
+{
+    return m_app;
+}
+
+const std::string & StreamProcess::GetStreamName()
+{
+    return m_streamName;
+}
+
 bool StreamProcess::Dispatch(PacketContext &context)
 {
+    if (!context.payload.size())
+        return false;
+
     switch (context.headerDecoder.GetMsgHeader().typeId)
     {
-    case 0x14:
+    case MSG_TYPE_COMMAND:
         if (!Amf0Decode(&context.payload[0], context.payload.size(),
             context))
             return false;
         break;
 
-    case 0x09:
+    case MSG_TYPE_METADATA:
+        OnMetaData(context, &context.payload[0], context.payload.size());
+        break;
+
+    case MSG_TYPE_VIDEO:
         WriteH264(&context.payload[0], context.payload.size());
+        OnVideo(context, &context.payload[0], context.payload.size());
+        break;
+
+    case MSG_TYPE_AUDIO:
+        OnAudio(context, &context.payload[0], context.payload.size());
         break;
 
     default:
@@ -268,6 +295,8 @@ bool StreamProcess::ConnectDecode(char *data, size_t len,
     m_connectCommand.tcUrl = obj["tcUrl"];
     m_connectCommand.name = name;
     m_connectCommand.transactionId = transactionId;
+
+    m_app = m_connectCommand.app;
     return true;
 }
 
@@ -308,6 +337,8 @@ bool StreamProcess::FCPublishDecode(
     m_fcpublishCommand.name = name;
     m_fcpublishCommand.transactionId = transactionId;
     m_fcpublishCommand.streamName = streamName;
+
+    m_streamName = streamName;
     return true;
 }
 
@@ -328,7 +359,7 @@ void StreamProcess::OnFCPublish(const PacketContext &context,
     amf_write(&invoke, status);
 
     printf("onFCPublish\n");
-    SendChunk(5, 0x14, 0, 1, &invoke.buf[0], invoke.buf.size());
+    SendChunk(5, MSG_TYPE_COMMAND, 0, 1, &invoke.buf[0], invoke.buf.size());
 
     printf("onFCPublish result: %d\n", command.transactionId);
     ResponseResult(command.transactionId);
@@ -374,6 +405,7 @@ bool StreamProcess::PublishDecode(
     m_publishCommand.streamName = streamName;
     m_publishCommand.app = app;
 
+    m_streamName = streamName;
     return true;
 }
 
@@ -397,34 +429,40 @@ void StreamProcess::OnPublish(const PacketContext &context,
 
 
     printf("OnPublish\n");
-    SendChunk(5, 0x14, 0, 1, &invoke.buf[0], invoke.buf.size());
+    SendChunk(5, MSG_TYPE_COMMAND, 0, 1, &invoke.buf[0], invoke.buf.size());
 
     printf("OnPublish result\n");
     ResponseResult(command.transactionId);
 }
 
-void StreamProcess::OnMetaData(const PacketContext &context,
+void StreamProcess::OnMetaData(PacketContext &context,
                                const char *data, size_t len)
 {
-    
+    context.type = PacketType_MetaData;
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, 0);
 }
 
-void StreamProcess::OnSpspps(const PacketContext &context,
-                             const char *data, size_t len)
-{
-
-}
-
-void StreamProcess::OnVideo(const PacketContext &context,
+void StreamProcess::OnVideo(PacketContext &context,
                             const char *data, size_t len)
 {
+    context.type = PacketType_Video;
+    VideoInfo videoInfo;
+    videoInfo.isKeyFrame = data[0] & 0x10;
+    videoInfo.isSpspps = data[1] == 0;
 
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &videoInfo);
 }
 
-void StreamProcess::OnAudio(const PacketContext &context,
+void StreamProcess::OnAudio(PacketContext &context,
                             const char *data, size_t len)
 {
+    AudioInfo audioInfo;
+    audioInfo.isSeqHeader = data[1] == 0;
 
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &audioInfo);
 }
 
 void StreamProcess::SendChunk(
@@ -501,5 +539,5 @@ void StreamProcess::ResponseResult(
     amf_write(&encoder, reply);
     amf_write(&encoder, status);
 
-    SendChunk(csId, 0x14, 0, 0, &encoder.buf[0], encoder.buf.size());
+    SendChunk(csId, MSG_TYPE_COMMAND, 0, 0, &encoder.buf[0], encoder.buf.size());
 }

@@ -24,6 +24,7 @@ struct StreamCache
     Gop gop;
     std::string meta;
     std::string spspps;
+    std::string seqheader;
     PlayerSet players;
 };
 
@@ -34,8 +35,10 @@ class DataCache
 public:
     void SetMetaData(const std::string &app, const std::string &streamName,
                      const char *data, size_t len);
-    void SetSpsPps(const std::string &app, const std::string &streamName,
+    void SetSpspps(const std::string &app, const std::string &streamName,
                    const char *data, size_t len);
+    void SetSeqheader(const std::string &app, const std::string &streamName,
+                      const char *data, size_t len);
     void AddVideo(const std::string &app, const std::string &streamName,
                   bool isKeyFrame, const char *data, size_t len);
     void AddAudio(const std::string &app, const std::string &streamName,

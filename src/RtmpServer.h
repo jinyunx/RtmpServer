@@ -1,6 +1,8 @@
 #ifndef RTMP_SERVER_H
 #define RTMP_SERVER_H
 
+#include "StreamProcess.h"
+#include "DataCache.h"
 #include <muduo/net/TcpServer.h>
 
 class RtmpServer
@@ -20,6 +22,10 @@ private:
     void SendMessage(const muduo::net::TcpConnectionPtr &conn,
                      const char *data, size_t len);
 
+    void RecvMessage(const muduo::net::TcpConnectionPtr &conn,
+                     const PacketContext &packetContext, const void *info);
+
+    DataCache m_dataCache;
     muduo::net::TcpServer m_server;
 };
 
