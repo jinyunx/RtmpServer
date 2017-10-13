@@ -1,6 +1,8 @@
 #include "StreamProcess.h"
 #include "stdio.h"
 
+#define MSG_TYPE_CHUNK_SIZE 0x01
+#define MSG_TYPE_WINACK_SIZE 0x05
 #define MSG_TYPE_COMMAND 0x14
 #define MSG_TYPE_METADATA 0x12
 #define MSG_TYPE_VIDEO 0x09
@@ -89,8 +91,8 @@ namespace
 }
 
 StreamProcess::StreamProcess(const OnChunkSend &onChunkSend)
-    : m_sendChunkSize(kSendChunkSize), m_revcChunkSize(kRecvChunkSize),
-      m_onChunkSend(onChunkSend)
+    : m_role(Role_Unknow), m_sendChunkSize(kSendChunkSize),
+      m_revcChunkSize(kRecvChunkSize), m_onChunkSend(onChunkSend)
 { }
 
 int StreamProcess::Process(char *data, size_t len)
@@ -102,6 +104,7 @@ int StreamProcess::Process(char *data, size_t len)
     unsigned int csId = headerDecoder.GetBasicHeader().csId;
 
     PacketContext &context = m_packetContext[csId];
+    context.csId = csId;
     if (context.stage == Stage_Header)
     {
         RtmpHeaderState state = context.headerDecoder.Decode(data, len);
@@ -164,6 +167,11 @@ const std::string & StreamProcess::GetStreamName()
     return m_streamName;
 }
 
+Role StreamProcess::GetRole()
+{
+    return m_role;
+}
+
 bool StreamProcess::Dispatch(PacketContext &context)
 {
     if (!context.payload.size())
@@ -178,15 +186,18 @@ bool StreamProcess::Dispatch(PacketContext &context)
         break;
 
     case MSG_TYPE_METADATA:
+        context.type = PacketType_MetaData;
         OnMetaData(context, &context.payload[0], context.payload.size());
         break;
 
     case MSG_TYPE_VIDEO:
+        context.type = PacketType_Video;
         WriteH264(&context.payload[0], context.payload.size());
         OnVideo(context, &context.payload[0], context.payload.size());
         break;
 
     case MSG_TYPE_AUDIO:
+        context.type = PacketType_Audio;
         OnAudio(context, &context.payload[0], context.payload.size());
         break;
 
@@ -275,6 +286,15 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketContext &context)
         context.type = PacketType_Publish;
         OnPublish(context, m_publishCommand);
     }
+    else if (name == "play")
+    {
+        if (!PlayDecode(helper.GetData(), helper.GetLeftSize(),
+                        name, transactionId))
+            return false;
+
+        context.type = PacketType_Play;
+        OnPlay(context, m_playCommand);
+    }
 
     return true;
 }
@@ -358,8 +378,14 @@ void StreamProcess::OnFCPublish(const PacketContext &context,
     amf_write_null(&invoke);
     amf_write(&invoke, status);
 
+    ChunkMsgHeader msgHeader;
+    msgHeader.typeId = MSG_TYPE_COMMAND;
+    msgHeader.streamId = 1;
+    msgHeader.timestamp = 0;
+    msgHeader.length = invoke.buf.size();
+
     printf("onFCPublish\n");
-    SendChunk(5, MSG_TYPE_COMMAND, 0, 1, &invoke.buf[0], invoke.buf.size());
+    SendChunk(5, msgHeader, &invoke.buf[0]);
 
     printf("onFCPublish result: %d\n", command.transactionId);
     ResponseResult(command.transactionId);
@@ -406,6 +432,7 @@ bool StreamProcess::PublishDecode(
     m_publishCommand.app = app;
 
     m_streamName = streamName;
+    m_app = app;
     return true;
 }
 
@@ -414,6 +441,8 @@ void StreamProcess::OnPublish(const PacketContext &context,
 {
     if (m_onChunkRecv)
         m_onChunkRecv(context, &command);
+
+    m_role = Role_Publisher;
 
     amf_object_t status;
     status.insert(std::make_pair("level", std::string("status")));
@@ -427,26 +456,60 @@ void StreamProcess::OnPublish(const PacketContext &context,
     amf_write_null(&invoke);
     amf_write(&invoke, status);
 
+    ChunkMsgHeader msgHeader;
+    msgHeader.typeId = MSG_TYPE_COMMAND;
+    msgHeader.streamId = 1;
+    msgHeader.timestamp = 0;
+    msgHeader.length = invoke.buf.size();
 
     printf("OnPublish\n");
-    SendChunk(5, MSG_TYPE_COMMAND, 0, 1, &invoke.buf[0], invoke.buf.size());
+    SendChunk(5, msgHeader, &invoke.buf[0]);
 
     printf("OnPublish result\n");
     ResponseResult(command.transactionId);
 }
 
-void StreamProcess::OnMetaData(PacketContext &context,
+bool StreamProcess::PlayDecode(
+    char *data, size_t len, const std::string &name, int transactionId)
+{
+    Amf0Helper helper(data, len);
+
+    std::string streamName;
+    if (helper.Expect(AMF_STRING))
+        streamName = helper.GetString();
+    else
+        return false;
+
+    m_playCommand.name = name;
+    m_playCommand.transactionId = transactionId;
+    m_playCommand.streamName = streamName;
+
+    m_streamName = streamName;
+    return true;
+}
+
+void StreamProcess::OnPlay(const PacketContext &context,
+                           const PlayCommand &command)
+{
+    printf("OnPlay result\n");
+    ResponseResult(command.transactionId);
+
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &command);
+
+    m_role = Role_Player;
+}
+
+void StreamProcess::OnMetaData(const PacketContext &context,
                                const char *data, size_t len)
 {
-    context.type = PacketType_MetaData;
     if (m_onChunkRecv)
         m_onChunkRecv(context, 0);
 }
 
-void StreamProcess::OnVideo(PacketContext &context,
+void StreamProcess::OnVideo(const PacketContext &context,
                             const char *data, size_t len)
 {
-    context.type = PacketType_Video;
     VideoInfo videoInfo;
     videoInfo.isKeyFrame = data[0] & 0x10;
     videoInfo.isSpspps = data[1] == 0;
@@ -455,7 +518,7 @@ void StreamProcess::OnVideo(PacketContext &context,
         m_onChunkRecv(context, &videoInfo);
 }
 
-void StreamProcess::OnAudio(PacketContext &context,
+void StreamProcess::OnAudio(const PacketContext &context,
                             const char *data, size_t len)
 {
     AudioInfo audioInfo;
@@ -465,24 +528,16 @@ void StreamProcess::OnAudio(PacketContext &context,
         m_onChunkRecv(context, &audioInfo);
 }
 
-void StreamProcess::SendChunk(
-    int csId, int typeId, unsigned int timestamp,
-    int streamId, char *data, size_t len)
+void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *data)
 {
-    if (!data || len <= 0)
+    if (!data || msgHeader.length <= 0)
         return ;
 
-    ChunkMsgHeader msgHeader;
-    msgHeader.length = len;
-    msgHeader.streamId = streamId;
-    msgHeader.timestamp = timestamp;
-    msgHeader.typeId = typeId;
-
     size_t pos = 0;
-    while (pos < len)
+    while (pos < msgHeader.length)
     {
         std::string buf;
-        int sizeToSend = len - pos;
+        int sizeToSend = msgHeader.length - pos;
         if (sizeToSend > kSendChunkSize)
             sizeToSend = kSendChunkSize;
 
@@ -493,7 +548,7 @@ void StreamProcess::SendChunk(
 
         buf.append(data + pos, sizeToSend);
 
-        PrintBuf(&buf[0], buf.size());
+        // PrintBuf(&buf[0], buf.size());
 
         if (m_onChunkSend)
             m_onChunkSend(&buf[0], buf.size());
@@ -511,8 +566,14 @@ void StreamProcess::SetWinAckSize()
     byteStream.Initialize(buf, sizeof(buf));
     byteStream.Write4Bytes(kWinAckSize);
 
+    ChunkMsgHeader msgHeader;
+    msgHeader.typeId = MSG_TYPE_WINACK_SIZE;
+    msgHeader.streamId = 0;
+    msgHeader.timestamp = 0;
+    msgHeader.length = sizeof(buf);
+
     printf("SetWinAckSize\n");
-    SendChunk(csId, 0x05, 0, 0, buf, sizeof(buf));
+    SendChunk(csId, msgHeader, buf);
 }
 
 void StreamProcess::SetChunkSize()
@@ -524,8 +585,14 @@ void StreamProcess::SetChunkSize()
     byteStream.Initialize(buf, sizeof(buf));
     byteStream.Write4Bytes(kSendChunkSize);
 
+    ChunkMsgHeader msgHeader;
+    msgHeader.typeId = MSG_TYPE_CHUNK_SIZE;
+    msgHeader.streamId = 0;
+    msgHeader.timestamp = 0;
+    msgHeader.length = sizeof(buf);
+
     printf("SetChunkSize\n");
-    SendChunk(csId, 0x01, 0, 0, buf, sizeof(buf));
+    SendChunk(csId, msgHeader, buf);
 }
 
 void StreamProcess::ResponseResult(
@@ -539,5 +606,11 @@ void StreamProcess::ResponseResult(
     amf_write(&encoder, reply);
     amf_write(&encoder, status);
 
-    SendChunk(csId, MSG_TYPE_COMMAND, 0, 0, &encoder.buf[0], encoder.buf.size());
+    ChunkMsgHeader msgHeader;
+    msgHeader.typeId = MSG_TYPE_COMMAND;
+    msgHeader.streamId = 0;
+    msgHeader.timestamp = 0;
+    msgHeader.length = encoder.buf.size();
+
+    SendChunk(csId, msgHeader, &encoder.buf[0]);
 }

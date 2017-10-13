@@ -25,6 +25,8 @@ private:
     void RecvMessage(const muduo::net::TcpConnectionPtr &conn,
                      const PacketContext &packetContext, const void *info);
 
+    void Play(StreamProcess *process, const AVMessage &message);
+
     DataCache m_dataCache;
     muduo::net::TcpServer m_server;
 };

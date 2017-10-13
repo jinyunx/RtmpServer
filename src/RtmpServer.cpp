@@ -9,6 +9,7 @@ struct Context
 {
     HandShake handShake;
     StreamProcess streamProcess;
+    Player player;
 
     Context(const OnS0S1S2 & onS0S1S2, const OnChunkSend &onChunkSend)
         : handShake(onS0S1S2), streamProcess(onChunkSend)
@@ -49,6 +50,17 @@ void RtmpServer::OnConnection(const muduo::net::TcpConnectionPtr &conn)
                                               this, conn, _1, _2));
 
         conn->setContext(context);
+    }
+    else
+    {
+        ContextPtr context = boost::any_cast<ContextPtr>(conn->getContext());
+        const std::string &app = context->streamProcess.GetApp();
+        const std::string &streamName = context->streamProcess.GetStreamName();
+        Role r = context->streamProcess.GetRole();
+        if (r == Role_Player)
+            m_dataCache.DeletePlayer(app, streamName, context->player);
+        else if (r == Role_Publisher)
+            m_dataCache.DeleteStream(app, streamName);
     }
 }
 
@@ -116,8 +128,9 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     {
     case PacketType_MetaData:
     {
-        m_dataCache.SetMetaData(app, streamName, &packet.payload[0],
-                                packet.payload.size());
+        m_dataCache.SetMetaData(app, streamName, packet.csId,
+                                packet.headerDecoder.GetMsgHeader(),
+                                &packet.payload[0]);
         break;
     }
 
@@ -125,11 +138,13 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     {
         VideoInfo *vinfo = (VideoInfo *)info;
         if(vinfo->isSpspps)
-            m_dataCache.SetSpspps(app, streamName, &packet.payload[0],
-                                  packet.payload.size());
+            m_dataCache.SetSpspps(app, streamName, packet.csId,
+                                  packet.headerDecoder.GetMsgHeader(),
+                                  &packet.payload[0]);
         else
-            m_dataCache.AddVideo(app, streamName, vinfo->isKeyFrame,
-                                 &packet.payload[0], packet.payload.size());
+            m_dataCache.AddVideo(app, streamName, packet.csId,
+                                 packet.headerDecoder.GetMsgHeader(),
+                                 vinfo->isKeyFrame, &packet.payload[0]);
         break;
     }
 
@@ -137,17 +152,33 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     {
         AudioInfo *ainfo = (AudioInfo *)info;
         if (ainfo->isSeqHeader)
-            m_dataCache.SetSeqheader(app, streamName, &packet.payload[0],
-                                     packet.payload.size());
+            m_dataCache.SetSeqheader(app, streamName, packet.csId,
+                                     packet.headerDecoder.GetMsgHeader(),
+                                     &packet.payload[0]);
         else
-            m_dataCache.AddAudio(app, streamName, &packet.payload[0],
-                                 packet.payload.size());
+            m_dataCache.AddAudio(app, streamName, packet.csId,
+                                 packet.headerDecoder.GetMsgHeader(),
+                                 &packet.payload[0]);
+        break;
+    }
+
+    case PacketType_Play:
+    {
+        context->player = boost::bind(&RtmpServer::Play, this,
+                                      &context->streamProcess, _1);
+        m_dataCache.AddPlayer(app, streamName, context->player);
+
         break;
     }
 
     default:
         break;
     }
+}
+
+void RtmpServer::Play(StreamProcess *process, const AVMessage &message)
+{
+    process->SendChunk(message.csId, message.msgHeader, &message.payload[0]);
 }
 
 int main()

@@ -1,13 +1,25 @@
 #ifndef DATA_CACHE_H
 #define DATA_CACHE_H
+#include "RtmpHeader.h"
 #include "boost/function.hpp"
 #include <string>
 #include <vector>
 #include <set>
 #include <map>
 
-typedef std::vector<std::string> Gop;
-typedef boost::function<void (const char *, size_t)> Player;
+struct AVMessage
+{
+    int csId;
+    ChunkMsgHeader msgHeader;
+    std::string payload;
+
+    AVMessage()
+        : csId(0)
+    { }
+};
+
+typedef std::vector<AVMessage> Gop;
+typedef boost::function<void(const AVMessage &)> Player;
 
 struct Compare
 {
@@ -22,9 +34,9 @@ typedef std::set<Player, Compare> PlayerSet;
 struct StreamCache
 {
     Gop gop;
-    std::string meta;
-    std::string spspps;
-    std::string seqheader;
+    AVMessage meta;
+    AVMessage spspps;
+    AVMessage seqheader;
     PlayerSet players;
 };
 
@@ -34,15 +46,16 @@ class DataCache
 {
 public:
     void SetMetaData(const std::string &app, const std::string &streamName,
-                     const char *data, size_t len);
+                     int csId, ChunkMsgHeader msgHeader, const char *data);
     void SetSpspps(const std::string &app, const std::string &streamName,
-                   const char *data, size_t len);
+                   int csId, ChunkMsgHeader msgHeader, const char *data);
     void SetSeqheader(const std::string &app, const std::string &streamName,
-                      const char *data, size_t len);
+                      int csId, ChunkMsgHeader msgHeader, const char *data);
     void AddVideo(const std::string &app, const std::string &streamName,
-                  bool isKeyFrame, const char *data, size_t len);
+                  int csId, ChunkMsgHeader msgHeader, bool isKeyFrame,
+                  const char *data);
     void AddAudio(const std::string &app, const std::string &streamName,
-                  const char *data, size_t len);
+                  int csId, ChunkMsgHeader msgHeader, const char *data);
 
     void DeleteStream(const std::string &app, const std::string &streamName);
 
@@ -55,7 +68,7 @@ private:
     std::string GetAppStream(const std::string &app,
                              const std::string &streamName);
     void PushToPlayer(const std::string &app, const std::string &streamName,
-                      const char *data, size_t len);
+                      const AVMessage &avMessage);
 
     StreamCacheMap m_streamCache;
 };

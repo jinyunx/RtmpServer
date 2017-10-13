@@ -13,6 +13,7 @@ enum PacketType
     PacketType_FCPublish,
     PacketType_CreateStream,
     PacketType_Publish,
+    PacketType_Play,
     PacketType_MetaData,
     PacketType_Video,
     PacketType_Audio,
@@ -24,15 +25,23 @@ enum Stage
     Stage_Body,
 };
 
+enum Role
+{
+    Role_Unknow,
+    Role_Publisher,
+    Role_Player,
+};
+
 struct PacketContext
 {
+    int csId;
     Stage stage;
     PacketType type;
     RtmpHeaderDecode headerDecoder;
     std::string payload;
 
     PacketContext()
-        : stage(Stage_Header),
+        : csId(0), stage(Stage_Header),
           type(PacketType_NONE)
     { }
 };
@@ -101,6 +110,17 @@ struct PublishCommand
     { }
 };
 
+struct PlayCommand
+{
+    std::string name;
+    int transactionId;
+    std::string streamName;
+
+    PlayCommand()
+        : transactionId(0)
+    { }
+};
+
 // CS ID to PacketContext
 typedef std::map<int, PacketContext> PacketContextMap;
 
@@ -119,8 +139,11 @@ public:
     void SetOnChunkRecv(const OnChunkRecv &onChunkRecv);
     void Dump();
 
+    void SendChunk(int csId, ChunkMsgHeader msgHeader, const char *data);
+
     const std::string &GetApp();
     const std::string &GetStreamName();
+    Role GetRole();
 
 private:
     bool Dispatch(PacketContext &context);
@@ -153,15 +176,18 @@ private:
     void OnPublish(const PacketContext &context,
                    const PublishCommand &command);
 
-    void OnMetaData(PacketContext &context,
-                    const char *data, size_t len);
-    void OnVideo(PacketContext &context,
-                 const char *data, size_t len);
-    void OnAudio(PacketContext &context,
-                 const char *data, size_t len);
+    bool PlayDecode(char *data, size_t len,
+                    const std::string &name,
+                    int transactionId);
+    void OnPlay(const PacketContext &context,
+                const PlayCommand &command);
 
-    void SendChunk(int csId, int typeId, unsigned int timestamp,
-                   int streamId, char *data, size_t len);
+    void OnMetaData(const PacketContext &context,
+                    const char *data, size_t len);
+    void OnVideo(const PacketContext &context,
+                 const char *data, size_t len);
+    void OnAudio(const PacketContext &context,
+                 const char *data, size_t len);
 
     void SetWinAckSize();
     void SetPeerBandwidth();
@@ -174,6 +200,8 @@ private:
     static const int kSendChunkSize = 60000;
     static const int kRecvChunkSize = 128;
     static const int kMaxHeaderBytes = 3 + 11;
+
+    Role m_role;
 
     size_t m_sendChunkSize;
     size_t m_revcChunkSize;
@@ -191,6 +219,7 @@ private:
     FCPublishCommand m_fcpublishCommand;
     CreateStreamCommand m_csCommand;
     PublishCommand m_publishCommand;
+    PlayCommand m_playCommand;
 };
 
 #endif // STREAM_PROCESS_H
