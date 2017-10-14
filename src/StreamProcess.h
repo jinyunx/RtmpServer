@@ -10,6 +10,7 @@ enum PacketType
 {
     PacketType_NONE,
     PacketType_Connect,
+    PacketType_ChunkeSize,
     PacketType_FCPublish,
     PacketType_CreateStream,
     PacketType_Publish,
@@ -181,6 +182,8 @@ private:
     void OnPlay(const PacketContext &context,
                 const PlayCommand &command);
 
+    void OnSetChunkSize(const PacketContext &context,
+                        const char *data, size_t len);
     void OnMetaData(const PacketContext &context,
                     const char *data, size_t len);
     void OnVideo(const PacketContext &context,

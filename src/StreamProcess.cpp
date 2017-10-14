@@ -188,6 +188,11 @@ bool StreamProcess::Dispatch(PacketContext &context)
             return false;
         break;
 
+    case MSG_TYPE_CHUNK_SIZE:
+        context.type = PacketType_ChunkeSize;
+        OnSetChunkSize(context, &context.payload[0], context.payload.size());
+        break;
+
     case MSG_TYPE_METADATA:
         context.type = PacketType_MetaData;
         OnMetaData(context, &context.payload[0], context.payload.size());
@@ -278,6 +283,10 @@ bool StreamProcess::Amf0Decode(char *data, size_t len, PacketContext &context)
 
         context.type = PacketType_Play;
         OnPlay(context, m_playCommand);
+    }
+    else
+    {
+        printf("Cannot handle %s for this release\n", name.c_str());
     }
 
     return true;
@@ -482,6 +491,17 @@ void StreamProcess::OnPlay(const PacketContext &context,
         m_onChunkRecv(context, &command);
 
     m_role = Role_Player;
+}
+
+void StreamProcess::OnSetChunkSize(const PacketContext & context,
+                                   const char * data, size_t len)
+{
+    ByteStream byteStream;
+    byteStream.Initialize((char *)data, len);
+    m_revcChunkSize = byteStream.Read4Bytes();
+
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &m_revcChunkSize);
 }
 
 void StreamProcess::OnMetaData(const PacketContext &context,
