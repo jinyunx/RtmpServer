@@ -265,7 +265,8 @@ unsigned int RtmpHeaderEncode::GetFmt(
     const ChunkMsgHeader *lastMsgHeader)
 {
     unsigned int fmt = 0;
-    if (!lastMsgHeader)
+    if (!lastMsgHeader ||
+        msgHeader->timestamp < lastMsgHeader->timestamp)
         return fmt;
 
     if (msgHeader->streamId == lastMsgHeader->streamId)
