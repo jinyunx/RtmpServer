@@ -532,7 +532,7 @@ void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *da
 
         buf.append(data + pos, sizeToSend);
 
-        // PrintBuf(&buf[0], buf.size());
+        PrintBuf(&buf[0], buf.size());
 
         if (m_onChunkSend)
             m_onChunkSend(&buf[0], buf.size());

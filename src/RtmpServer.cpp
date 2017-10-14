@@ -2,8 +2,11 @@
 #include "HandShake.h"
 #include "boost/bind.hpp"
 #include "boost/shared_ptr.hpp"
+
 #include <muduo/base/Logging.h>
 #include <muduo/net/EventLoop.h>
+#include <muduo/base/TimeZone.h>
+#include <muduo/base/AsyncLogging.h>
 
 struct Context
 {
@@ -58,9 +61,16 @@ void RtmpServer::OnConnection(const muduo::net::TcpConnectionPtr &conn)
         const std::string &streamName = context->streamProcess.GetStreamName();
         Role r = context->streamProcess.GetRole();
         if (r == Role_Player)
+        {
+            LOG_INFO << "Remove player " << conn->peerAddress().toIpPort()
+                     << "from stream " << app << "/" << streamName;
             m_dataCache.DeletePlayer(app, streamName, context->player);
+        }
         else if (r == Role_Publisher)
+        {
+            LOG_INFO << "Remove stream " << app << "/" << streamName;
             m_dataCache.DeleteStream(app, streamName);
+        }
     }
 }
 
@@ -82,6 +92,7 @@ void RtmpServer::OnMessage(const muduo::net::TcpConnectionPtr &conn,
 
         if (rt < 0)
         {
+            LOG_ERROR << "Handshake error";
             conn->shutdown();
             return;
         }
@@ -102,7 +113,9 @@ void RtmpServer::OnMessage(const muduo::net::TcpConnectionPtr &conn,
 
             if (rt < 0)
             {
+                LOG_ERROR << "Process message error";
                 conn->shutdown();
+                conn->forceCloseWithDelay(3);
                 return;
             }
             else
@@ -128,6 +141,7 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     {
     case PacketType_MetaData:
     {
+        LOG_INFO << "Recv meta data message";
         m_dataCache.SetMetaData(app, streamName, packet.csId,
                                 packet.headerDecoder.GetMsgHeader(),
                                 &packet.payload[0]);
@@ -137,14 +151,19 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     case PacketType_Video:
     {
         VideoInfo *vinfo = (VideoInfo *)info;
-        if(vinfo->isSpspps)
+        if (vinfo->isSpspps)
+        {
+            LOG_INFO << "Recv sps/pps message";
             m_dataCache.SetSpspps(app, streamName, packet.csId,
                                   packet.headerDecoder.GetMsgHeader(),
                                   &packet.payload[0]);
+        }
         else
+        {
             m_dataCache.AddVideo(app, streamName, packet.csId,
                                  packet.headerDecoder.GetMsgHeader(),
                                  vinfo->isKeyFrame, &packet.payload[0]);
+        }
         break;
     }
 
@@ -152,18 +171,25 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     {
         AudioInfo *ainfo = (AudioInfo *)info;
         if (ainfo->isSeqHeader)
+        {
+            LOG_INFO << "Recv aac sequence header message";
             m_dataCache.SetSeqheader(app, streamName, packet.csId,
                                      packet.headerDecoder.GetMsgHeader(),
                                      &packet.payload[0]);
+        }
         else
+        {
             m_dataCache.AddAudio(app, streamName, packet.csId,
                                  packet.headerDecoder.GetMsgHeader(),
                                  &packet.payload[0]);
+        }
         break;
     }
 
     case PacketType_Play:
     {
+        LOG_INFO << "Add player " << conn->peerAddress().toIpPort()
+                 << " to stream " << app << "/" << streamName;
         context->player = boost::bind(&RtmpServer::Play, this,
                                       &context->streamProcess, _1);
         m_dataCache.AddPlayer(app, streamName, context->player);
@@ -181,8 +207,30 @@ void RtmpServer::Play(StreamProcess *process, const AVMessage &message)
     process->SendChunk(message.csId, message.msgHeader, &message.payload[0]);
 }
 
-int main()
+
+boost::scoped_ptr<muduo::AsyncLogging> g_asyncLog;
+const int kRollSize = 100 * 1000 * 1000;
+
+void asyncOutput(const char* msg, int len)
 {
+    g_asyncLog->append(msg, len);
+}
+
+void setLogging(const char* argv0)
+{
+    muduo::TimeZone beijing(8 * 3600, "CST");
+    muduo::Logger::setTimeZone(beijing);
+    muduo::Logger::setOutput(asyncOutput);
+    char name[256];
+    strncpy(name, argv0, 256);
+    g_asyncLog.reset(new muduo::AsyncLogging(::basename(name), kRollSize));
+    g_asyncLog->start();
+}
+
+int main(int argc, char *argv[])
+{
+    setLogging(argv[0]);
+
     LOG_INFO << "pid = " << getpid();
     muduo::net::EventLoop loop;
     muduo::net::InetAddress listenAddr(1935);
