@@ -99,8 +99,11 @@ int StreamProcess::Process(char *data, size_t len)
 {
     RtmpHeaderDecode headerDecoder;
     RtmpHeaderState state = headerDecoder.DecodeCsId(data, len);
-    if (state != RtmpHeaderState_Ok)
-        return state;
+    if (state == RtmpHeaderState_NotEnoughData)
+        return 0;
+    else if (state == RtmpHeaderState_Error)
+        return -1;
+
     unsigned int csId = headerDecoder.GetBasicHeader().csId;
 
     PacketContext &context = m_packetContext[csId];
@@ -213,25 +216,6 @@ size_t StreamProcess::GetNeedLength(size_t body)
         return body;
 
     return body + (body-1) / m_revcChunkSize;
-}
-
-char * StreamProcess::MergeChunk(std::string &buf, char *data, size_t len)
-{
-    if (len <= m_revcChunkSize)
-        return data;
-
-    size_t i = 0;
-    while (i < len)
-    {
-        size_t copy = len - i;
-        if (copy > m_revcChunkSize)
-            copy = m_revcChunkSize;
-        buf.append(data + i, copy);
-
-        // Add 1 to skip basic header
-        i += copy + 1;
-    }
-    return &buf[0];
 }
 
 bool StreamProcess::Amf0Decode(char *data, size_t len, PacketContext &context)

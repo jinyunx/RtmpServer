@@ -148,7 +148,6 @@ public:
 private:
     bool Dispatch(PacketContext &context);
     size_t GetNeedLength(size_t body);
-    char *MergeChunk(std::string &buf, char *data, size_t len);
 
     bool Amf0Decode(char *data, size_t len, PacketContext &context);
 
