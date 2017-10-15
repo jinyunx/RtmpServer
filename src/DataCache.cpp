@@ -80,7 +80,7 @@ void DataCache::AddPlayer(const std::string &app, const std::string &streamName,
                           const Player &player)
 {
     std::string appStream = GetAppStream(app, streamName);
-    m_streamCache[appStream].players.insert(player);
+    m_streamCache[appStream].players.insert(&player);
 
     player(m_streamCache[appStream].meta);
     player(m_streamCache[appStream].spspps);
@@ -94,7 +94,7 @@ void DataCache::DeletePlayer(const std::string &app, const std::string &streamNa
                              const Player &player)
 {
     std::string appStream = GetAppStream(app, streamName);
-    m_streamCache[appStream].players.erase(player);
+    m_streamCache[appStream].players.erase(&player);
 }
 
 const StreamCacheMap & DataCache::GetStreamCache()
@@ -114,5 +114,5 @@ void DataCache::PushToPlayer(const std::string &app, const std::string &streamNa
     std::string appStream = GetAppStream(app, streamName);
     PlayerSet::iterator it = m_streamCache[appStream].players.begin();
     for (; it != m_streamCache[appStream].players.end(); ++it)
-        (*it)(avMessage);
+        (**it)(avMessage);
 }

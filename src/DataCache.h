@@ -21,15 +21,7 @@ struct AVMessage
 typedef std::vector<AVMessage> Gop;
 typedef boost::function<void(const AVMessage &)> Player;
 
-struct Compare
-{
-    bool operator() (const Player &lhs, const Player &rhs) const
-    {
-        return &lhs < &rhs;
-    }
-};
-
-typedef std::set<Player, Compare> PlayerSet;
+typedef std::set<const Player *> PlayerSet;
 
 struct StreamCache
 {

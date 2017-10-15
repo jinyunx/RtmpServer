@@ -200,7 +200,7 @@ bool StreamProcess::Dispatch(PacketContext &context)
 
     case MSG_TYPE_VIDEO:
         context.type = PacketType_Video;
-        WriteH264(&context.payload[0], context.payload.size());
+        //WriteH264(&context.payload[0], context.payload.size());
         OnVideo(context, &context.payload[0], context.payload.size());
         break;
 

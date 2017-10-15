@@ -69,13 +69,15 @@ void RtmpServer::OnConnection(const muduo::net::TcpConnectionPtr &conn)
         if (r == Role_Player)
         {
             LOG_INFO << "Remove player " << conn->peerAddress().toIpPort()
-                     << "from stream " << app << "/" << streamName;
+                     << " from stream " << app << "/" << streamName;
             m_dataCache.DeletePlayer(app, streamName, context->player);
+            conn->setContext(boost::any());
         }
         else if (r == Role_Publisher)
         {
             LOG_INFO << "Remove stream " << app << "/" << streamName;
             m_dataCache.DeleteStream(app, streamName);
+            conn->setContext(boost::any());
         }
     }
 }
