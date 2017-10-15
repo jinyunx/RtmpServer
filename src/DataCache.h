@@ -64,6 +64,8 @@ public:
     void DeletePlayer(const std::string &app, const std::string &streamName,
                       const Player &player);
 
+    const StreamCacheMap &GetStreamCache();
+
 private:
     std::string GetAppStream(const std::string &app,
                              const std::string &streamName);

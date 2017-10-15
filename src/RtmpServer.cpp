@@ -7,6 +7,7 @@
 #include <muduo/net/EventLoop.h>
 #include <muduo/base/TimeZone.h>
 #include <muduo/base/AsyncLogging.h>
+#include <sstream>
 
 struct Context
 {
@@ -22,9 +23,13 @@ struct Context
 typedef boost::shared_ptr<Context> ContextPtr;
 
 RtmpServer::RtmpServer(muduo::net::EventLoop *loop,
-                       const muduo::net::InetAddress &listenAddr)
-    : m_server(loop, listenAddr, "RtmpServer")
+                       const muduo::net::InetAddress &listenRtmp,
+                       const muduo::net::InetAddress &listenHttp)
+    : m_httpDispatch(kTimeout, loop, listenHttp, "RtmpServer"),
+      m_server(loop, listenRtmp, "RtmpServer")
 {
+    m_httpDispatch.AddHander("/status", boost::bind(&RtmpServer::HandleStatus,
+                                                    this, _1, _2));
     m_server.setConnectionCallback(
         boost::bind(&RtmpServer::OnConnection, this, _1));
     m_server.setMessageCallback(
@@ -33,6 +38,7 @@ RtmpServer::RtmpServer(muduo::net::EventLoop *loop,
 
 void RtmpServer::Start()
 {
+    m_httpDispatch.Start();
     m_server.start();
 }
 
@@ -207,6 +213,25 @@ void RtmpServer::Play(StreamProcess *process, const AVMessage &message)
     process->SendChunk(message.csId, message.msgHeader, &message.payload[0]);
 }
 
+void RtmpServer::HandleStatus(const boost::shared_ptr<HttpRequester>& request,
+                              boost::shared_ptr<HttpResponser>& response)
+{
+    const StreamCacheMap &cache = m_dataCache.GetStreamCache();
+
+    std::ostringstream body;
+    body << "{";
+    StreamCacheMap::const_iterator it = cache.begin();
+    for (; it != cache.end(); ++it)
+    {
+        body << "\n"
+             << "stream name: " << it->first.c_str() << "\n"
+             << "client num: " << it->second.players.size() << "\n";
+    }
+    body << "}";
+
+    response->SetStatusCode(HttpResponser::StatusCode_200Ok);
+    response->SetBody(body.str().c_str());
+}
 
 boost::scoped_ptr<muduo::AsyncLogging> g_asyncLog;
 const int kRollSize = 100 * 1000 * 1000;
@@ -233,8 +258,9 @@ int main(int argc, char *argv[])
 
     LOG_INFO << "pid = " << getpid();
     muduo::net::EventLoop loop;
-    muduo::net::InetAddress listenAddr(1935);
-    RtmpServer server(&loop, listenAddr);
+    muduo::net::InetAddress listenRtmp(1935);
+    muduo::net::InetAddress listenHttp(80);
+    RtmpServer server(&loop, listenRtmp, listenHttp);
     server.Start();
     loop.loop();
     return 0;

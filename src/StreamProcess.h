@@ -199,7 +199,7 @@ private:
                         const AMFValue &status = AMFValue());
 
     static const int kWinAckSize = 2500000;
-    static const int kSendChunkSize = 60000;
+    static const int kSendChunkSize = 128;
     static const int kRecvChunkSize = 128;
     static const int kMaxHeaderBytes = 3 + 11;
 

@@ -31,6 +31,14 @@ set(LIBRARY_OUTPUT_PATH "${PROJECT_BINARY_DIR}/lib")
 
 include_directories("/root/onexie/cppDev/boost/include")
 include_directories("${PROJECT_BINARY_DIR}/3rd")
+include_directories("${PROJECT_BINARY_DIR}/../libpublic")
+
+add_library(http
+    ${PROJECT_BINARY_DIR}/../libpublic/libhttp/HttpDispatch.cpp
+    ${PROJECT_BINARY_DIR}/../libpublic/libhttp/HttpParser.cpp
+    ${PROJECT_BINARY_DIR}/../libpublic/libhttp/HttpServer.cpp
+    ${PROJECT_BINARY_DIR}/../libpublic/3rd/http-parser/http_parser.c
+    )
 
 add_library(amfx
     ${PROJECT_BINARY_DIR}/3rd/libamfx/amf.cc
@@ -63,6 +71,7 @@ add_executable(RtmpServer
     )
 
 target_link_libraries(RtmpServer
+    http
     amfx
     muduo_net
     muduo_base

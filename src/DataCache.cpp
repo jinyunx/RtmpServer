@@ -97,6 +97,11 @@ void DataCache::DeletePlayer(const std::string &app, const std::string &streamNa
     m_streamCache[appStream].players.erase(player);
 }
 
+const StreamCacheMap & DataCache::GetStreamCache()
+{
+    return m_streamCache;
+}
+
 std::string DataCache::GetAppStream(const std::string &app,
                                     const std::string &streamName)
 {
