@@ -7,14 +7,21 @@
 #include <set>
 #include <map>
 
+enum MessageType
+{
+    MessageType_Data,
+    MessageType_Close,
+};
+
 struct AVMessage
 {
+    MessageType type;
     int csId;
     ChunkMsgHeader msgHeader;
     std::string payload;
 
     AVMessage()
-        : csId(0)
+        : type(MessageType_Data), csId(0)
     { }
 };
 
@@ -51,7 +58,7 @@ public:
 
     void DeleteStream(const std::string &app, const std::string &streamName);
 
-    void AddPlayer(const std::string &app, const std::string &streamName,
+    bool AddPlayer(const std::string &app, const std::string &streamName,
                    const Player &player);
     void DeletePlayer(const std::string &app, const std::string &streamName,
                       const Player &player);

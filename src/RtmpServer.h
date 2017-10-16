@@ -28,10 +28,12 @@ private:
     void RecvMessage(const muduo::net::TcpConnectionPtr &conn,
                      const PacketContext &packetContext, const void *info);
 
-    void Play(StreamProcess *process, const AVMessage &message);
+    void Play(const muduo::net::TcpConnectionPtr &conn, const AVMessage &message);
 
     void HandleStatus(const boost::shared_ptr<HttpRequester> &request,
                       boost::shared_ptr<HttpResponser> &response);
+
+    void Close(const muduo::net::TcpConnectionPtr &conn);
 
     static const int kTimeout = 10;
 

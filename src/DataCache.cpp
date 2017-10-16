@@ -73,28 +73,43 @@ void DataCache::DeleteStream(const std::string &app,
     std::string appStream = GetAppStream(app, streamName);
     StreamCacheMap::iterator it = m_streamCache.find(appStream);
     if (it != m_streamCache.end())
+    {
+        AVMessage closeMessage;
+        closeMessage.type = MessageType_Close;
+        PushToPlayer(app, streamName, closeMessage);
         m_streamCache.erase(it);
+    }
 }
 
-void DataCache::AddPlayer(const std::string &app, const std::string &streamName,
+bool DataCache::AddPlayer(const std::string &app, const std::string &streamName,
                           const Player &player)
 {
     std::string appStream = GetAppStream(app, streamName);
-    m_streamCache[appStream].players.insert(&player);
+    StreamCacheMap::iterator it = m_streamCache.find(appStream);
+    if (it == m_streamCache.end())
+        return false;
 
-    player(m_streamCache[appStream].meta);
-    player(m_streamCache[appStream].spspps);
-    player(m_streamCache[appStream].seqheader);
+    it->second.players.insert(&player);
 
-    for (size_t i = 0; i < m_streamCache[appStream].gop.size(); ++i)
-        player(m_streamCache[appStream].gop[i]);
+    player(it->second.meta);
+    player(it->second.spspps);
+    player(it->second.seqheader);
+
+    for (size_t i = 0; i < it->second.gop.size(); ++i)
+        player(it->second.gop[i]);
+
+    return true;
 }
 
 void DataCache::DeletePlayer(const std::string &app, const std::string &streamName,
                              const Player &player)
 {
     std::string appStream = GetAppStream(app, streamName);
-    m_streamCache[appStream].players.erase(&player);
+    StreamCacheMap::iterator it = m_streamCache.find(appStream);
+    if (it == m_streamCache.end())
+        return;
+
+    it->second.players.erase(&player);
 }
 
 const StreamCacheMap & DataCache::GetStreamCache()

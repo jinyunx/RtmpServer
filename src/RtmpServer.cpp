@@ -101,7 +101,7 @@ void RtmpServer::OnMessage(const muduo::net::TcpConnectionPtr &conn,
         if (rt < 0)
         {
             LOG_ERROR << "Handshake error";
-            conn->shutdown();
+            Close(conn);
             return;
         }
         else
@@ -122,8 +122,7 @@ void RtmpServer::OnMessage(const muduo::net::TcpConnectionPtr &conn,
             if (rt < 0)
             {
                 LOG_ERROR << "Process message error";
-                conn->shutdown();
-                conn->forceCloseWithDelay(3);
+                Close(conn);
                 return;
             }
             else
@@ -198,10 +197,12 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     {
         LOG_INFO << "Add player " << conn->peerAddress().toIpPort()
                  << " to stream " << app << "/" << streamName;
-        context->player = boost::bind(&RtmpServer::Play, this,
-                                      &context->streamProcess, _1);
-        m_dataCache.AddPlayer(app, streamName, context->player);
-
+        context->player = boost::bind(&RtmpServer::Play, this, conn, _1);
+        if (!m_dataCache.AddPlayer(app, streamName, context->player))
+        {
+            LOG_ERROR << "No stream " << app << "/" << streamName;
+            Close(conn);
+        }
         break;
     }
 
@@ -210,9 +211,20 @@ void RtmpServer::RecvMessage(const muduo::net::TcpConnectionPtr &conn,
     }
 }
 
-void RtmpServer::Play(StreamProcess *process, const AVMessage &message)
+void RtmpServer::Play(const muduo::net::TcpConnectionPtr &conn, const AVMessage &message)
 {
-    process->SendChunk(message.csId, message.msgHeader, &message.payload[0]);
+    switch (message.type)
+    {
+    case MessageType_Close:
+        Close(conn);
+        break;
+
+    default:
+        ContextPtr context = boost::any_cast<ContextPtr>(conn->getContext());
+        context->streamProcess.SendChunk(message.csId, message.msgHeader,
+                                         &message.payload[0]);
+        break;
+    }
 }
 
 void RtmpServer::HandleStatus(const boost::shared_ptr<HttpRequester>& request,
@@ -233,6 +245,12 @@ void RtmpServer::HandleStatus(const boost::shared_ptr<HttpRequester>& request,
 
     response->SetStatusCode(HttpResponser::StatusCode_200Ok);
     response->SetBody(body.str().c_str());
+}
+
+void RtmpServer::Close(const muduo::net::TcpConnectionPtr &conn)
+{
+    conn->shutdown();
+    conn->forceCloseWithDelay(3);
 }
 
 boost::scoped_ptr<muduo::AsyncLogging> g_asyncLog;
