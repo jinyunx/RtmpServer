@@ -169,25 +169,24 @@ private:
     std::string m_buffer;
 };
 
-SessionPtr NewSession(boost::asio::io_service &service,
-                      DataCache &dataCache)
-{
-    return SessionPtr(new RtmpSession(service, dataCache));
-}
-
 RtmpServer::RtmpServer(boost::asio::io_service &service)
-    : //m_httpDispatch(80, service),
+    : m_service(service), m_httpDispatch(80, service),
       m_tcpServer(1935, service, boost::bind(
-          &NewSession, boost::ref(service), boost::ref(m_dataCache)))
+          &RtmpServer::NewSession, this))
 {
-    //m_httpDispatch.AddHandler("/status", boost::bind(&RtmpServer::HandleStatus,
-    //                                                 this, _1, _2));
+    m_httpDispatch.AddHandler("/status", boost::bind(&RtmpServer::HandleStatus,
+                                                     this, _1, _2));
 }
 
 void RtmpServer::Start()
 {
-    //m_httpDispatch.Go();
+    m_httpDispatch.Go();
     m_tcpServer.Go();
+}
+
+SessionPtr RtmpServer::NewSession()
+{
+    return SessionPtr(new RtmpSession(m_service, m_dataCache));
 }
 
 void RtmpServer::HandleStatus(const HttpRequester &request,

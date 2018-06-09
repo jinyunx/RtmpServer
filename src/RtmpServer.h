@@ -13,11 +13,14 @@ public:
     void Start();
 
 private:
+    SessionPtr NewSession();
+
     void HandleStatus(const HttpRequester &request,
                       HttpResponser &response);
 
+    boost::asio::io_service &m_service;
     DataCache m_dataCache;
-    //HttpDispatch m_httpDispatch;
+    HttpDispatch m_httpDispatch;
     TcpServer m_tcpServer;
 };
 
