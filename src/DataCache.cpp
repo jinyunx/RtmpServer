@@ -40,31 +40,35 @@ void DataCache::AddVideo(const std::string &app, const std::string &streamName,
                          int csId, ChunkMsgHeader msgHeader, bool isKeyFrame,
                          const char *data)
 {
-    AVMessage message;
-    message.payload.append(data, msgHeader.length);
-    message.csId = csId;
-    message.msgHeader = msgHeader;
-
     std::string appStream = GetAppStream(app, streamName);
-    if (isKeyFrame)
-        m_streamCache[appStream].gop.clear();
-    m_streamCache[appStream].gop.push_back(message);
+    {
+        AVMessage message;
+        message.payload.append(data, msgHeader.length);
+        message.csId = csId;
+        message.msgHeader = msgHeader;
 
-    PushToPlayer(app, streamName, message);
+        if (isKeyFrame)
+            m_streamCache[appStream].gop.clear();
+        m_streamCache[appStream].gop.push_back(message);
+    }
+
+    PushToPlayer(app, streamName, m_streamCache[appStream].gop.back());
 }
 
 void DataCache::AddAudio(const std::string &app, const std::string &streamName,
                          int csId, ChunkMsgHeader msgHeader, const char *data)
 {
-    AVMessage message;
-    message.payload.append(data, msgHeader.length);
-    message.csId = csId;
-    message.msgHeader = msgHeader;
-
     std::string appStream = GetAppStream(app, streamName);
-    m_streamCache[appStream].gop.push_back(message);
+    {
+        AVMessage message;
+        message.payload.append(data, msgHeader.length);
+        message.csId = csId;
+        message.msgHeader = msgHeader;
 
-    PushToPlayer(app, streamName, message);
+        m_streamCache[appStream].gop.push_back(message);
+    }
+
+    PushToPlayer(app, streamName, m_streamCache[appStream].gop.back());
 }
 
 void DataCache::DeleteStream(const std::string &app,

@@ -40,6 +40,13 @@ add_library(http
     ${PROJECT_BINARY_DIR}/../libpublic/3rd/http-parser/http_parser.c
     )
 
+target_link_libraries(http
+    libboost_system.a
+    libboost_coroutine.a
+    libboost_thread.a
+    libboost_context.a
+    )
+
 add_library(amfx
     ${PROJECT_BINARY_DIR}/3rd/libamfx/amf.cc
     ${PROJECT_BINARY_DIR}/3rd/libamfx/utils.cc
@@ -73,7 +80,5 @@ add_executable(RtmpServer
 target_link_libraries(RtmpServer
     http
     amfx
-    muduo_net
-    muduo_base
     pthread
     )
