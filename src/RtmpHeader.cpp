@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 RtmpHeaderState RtmpHeaderDecode::Decode(
-    char *data, size_t len)
+    char *data, size_t len, bool startNewMsg)
 {
     if (!m_byteStream.Initialize(data, len))
         return RtmpHeaderState_NotEnoughData;
@@ -11,16 +11,11 @@ RtmpHeaderState RtmpHeaderDecode::Decode(
     if (state != RtmpHeaderState_Ok)
         return state;
 
-    state = DecodeMsgHeader();
-    if (state != RtmpHeaderState_Ok)
-        return state;
-
-    state = DecodeExtenedTimestamp();
+    state = DecodeMsgHeader(startNewMsg);
     if (state == RtmpHeaderState_Ok)
     {
         m_complete = true;
         m_csIdMsgHeader[m_basicHeader.csId] = m_msgHeader;
-        m_csIdHasExtended[m_basicHeader.csId] = m_hasExtenedTimestamp;
     }
 
     return state;
@@ -41,11 +36,6 @@ ChunkMsgHeader RtmpHeaderDecode::GetMsgHeader() const
 ChunkBasicHeader RtmpHeaderDecode::GetBasicHeader() const
 {
     return m_basicHeader;
-}
-
-ExtendedTimestamp RtmpHeaderDecode::GetExtendedTimestamp() const
-{
-    return m_extenedTimestamp;
 }
 
 int RtmpHeaderDecode::GetConsumeDataLen()
@@ -69,9 +59,7 @@ void RtmpHeaderDecode::Reset()
     m_hasExtenedTimestamp = false;
     m_basicHeader.Reset();
     m_msgHeader.Reset();
-    m_extenedTimestamp.Reset();
     m_csIdMsgHeader.clear();
-    m_csIdHasExtended.clear();
     m_byteStream.Initialize(0, 0);
 }
 
@@ -116,7 +104,7 @@ RtmpHeaderState RtmpHeaderDecode::DecodeBasicHeader()
     }
 }
 
-RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader()
+RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader(bool startNewMsg)
 {
     ChunkMsgHeader *lastMsgHeader = 0;
     if (m_basicHeader.fmt > 0)
@@ -133,87 +121,74 @@ RtmpHeaderState RtmpHeaderDecode::DecodeMsgHeader()
         if (!m_byteStream.Require(11))
             return RtmpHeaderState_NotEnoughData;
 
-        HandleTimestamp(lastMsgHeader);
+        m_msgHeader.tsField = m_byteStream.Read3Bytes();
         m_msgHeader.length = m_byteStream.Read3Bytes();
         m_msgHeader.typeId =
             static_cast<unsigned int>(m_byteStream.Read1Bytes());
         // Inputed stream id is little endian already
         m_msgHeader.streamId =
             static_cast<unsigned int>(m_byteStream.Read4BytesKeepOriOrder());
-        return RtmpHeaderState_Ok;
+        break;
 
     case 1:
         if (!m_byteStream.Require(7))
             return RtmpHeaderState_NotEnoughData;
 
-        HandleTimestamp(lastMsgHeader);
+        m_msgHeader.tsField = m_byteStream.Read3Bytes();
         m_msgHeader.length = m_byteStream.Read3Bytes();
         m_msgHeader.typeId =
             static_cast<unsigned int>(m_byteStream.Read1Bytes());
         m_msgHeader.streamId = lastMsgHeader->streamId;
-        return RtmpHeaderState_Ok;
+        break;
 
     case 2:
         if (!m_byteStream.Require(3))
             return RtmpHeaderState_NotEnoughData;
 
-        HandleTimestamp(lastMsgHeader);
+        m_msgHeader.tsField = m_byteStream.Read3Bytes();
         m_msgHeader.length = lastMsgHeader->length;
         m_msgHeader.typeId = lastMsgHeader->typeId;
         m_msgHeader.streamId = lastMsgHeader->streamId;
-        return RtmpHeaderState_Ok;
+        break;
 
     case 3:
-        m_msgHeader.timestamp = lastMsgHeader->timestamp;
-        m_msgHeader.length = lastMsgHeader->length;
-        m_msgHeader.typeId = lastMsgHeader->typeId;
-        m_msgHeader.streamId = lastMsgHeader->streamId;
-        return RtmpHeaderState_Ok;
+        m_msgHeader = *lastMsgHeader;
+        // Not the start of new msg means
+        // the chunk is park of one message
+        // had already started, so just copy
+        // the last msg header and drop the
+        // extern timestamp when need, then return.
+        if (!startNewMsg)
+        {
+            if (m_msgHeader.tsField >= 0xFFFFFF)
+            {
+                if (!m_byteStream.Require(4))
+                    return RtmpHeaderState_NotEnoughData;
+                m_byteStream.Read4Bytes();
+            }
+            return RtmpHeaderState_Ok;
+        }
+        break;
 
     default:
         return RtmpHeaderState_Error;
     }
-}
 
-RtmpHeaderState RtmpHeaderDecode::DecodeExtenedTimestamp()
-{
-    if (m_hasExtenedTimestamp)
+    if (m_msgHeader.tsField >= 0xFFFFFF)
     {
         if (!m_byteStream.Require(4))
             return RtmpHeaderState_NotEnoughData;
-
-        m_extenedTimestamp.t = m_byteStream.Read4Bytes();
-        m_msgHeader.timestamp = m_extenedTimestamp.t;
+        m_msgHeader.timestamp = m_byteStream.Read4Bytes();
     }
-    // See https://forums.adobe.com/thread/542749
-    else if (m_basicHeader.fmt == 3 && m_csIdHasExtended[m_basicHeader.csId])
+    else
     {
-        if (!m_byteStream.Require(4))
-            return RtmpHeaderState_NotEnoughData;
-
-        if (m_csIdMsgHeader[m_basicHeader.csId].timestamp ==
-                static_cast<unsigned int>(m_byteStream.Read4Bytes()))
-        {
-            m_extenedTimestamp.t = m_csIdMsgHeader[m_basicHeader.csId].timestamp;
-            m_msgHeader.timestamp = m_extenedTimestamp.t;
-            m_hasExtenedTimestamp = true;
-        }
-        else
-        {
-            m_byteStream.Skip(-4);
-        }
+        m_msgHeader.timestamp = m_msgHeader.tsField;
     }
-    return RtmpHeaderState_Ok;
-}
 
-void RtmpHeaderDecode::HandleTimestamp(
-    const ChunkMsgHeader *lastMsgHeader)
-{
-    m_msgHeader.timestamp = m_byteStream.Read3Bytes();
-    if (m_msgHeader.timestamp >= 0x00ffffff)
-        m_hasExtenedTimestamp = true;
-    else if (m_basicHeader.fmt != 0)
+    if (m_basicHeader.fmt != 0)
         m_msgHeader.timestamp += lastMsgHeader->timestamp;
+
+    return RtmpHeaderState_Ok;
 }
 
 RtmpHeaderEncode::RtmpHeaderEncode()
@@ -322,7 +297,7 @@ void RtmpHeaderEncode::SetMsgHeader(
             m_hasExtended = true;
             m_byteStream.Write4Bytes(msgHeader->timestamp);
         }
-        
+
         break;
 
     case 1:

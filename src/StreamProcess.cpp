@@ -1,5 +1,6 @@
 #include "StreamProcess.h"
-#include "stdio.h"
+#include <stdio.h>
+#include <iostream>
 
 #define MSG_TYPE_CHUNK_SIZE 0x01
 #define MSG_TYPE_WINACK_SIZE 0x05
@@ -110,7 +111,8 @@ int StreamProcess::Process(char *data, size_t len)
     context.csId = csId;
     if (context.stage == Stage_Header)
     {
-        RtmpHeaderState state = context.headerDecoder.Decode(data, len);
+        RtmpHeaderState state = context.headerDecoder.Decode(
+            data, len, context.startNewMsg);
 
         if (state == RtmpHeaderState_Error)
             return -1;
@@ -136,12 +138,19 @@ int StreamProcess::Process(char *data, size_t len)
     if (len < needLen)
         return 0;
 
+    // Message slice to multi chunks,
+    // get one chunk and next chunk is not
+    // the start of message
     context.payload.append(data, needLen);
+    context.startNewMsg = false;
 
     if (context.payload.size() == msgLen)
     {
+        // Dispatch one message and
+        // ready to start new message
         Dispatch(context);
         context.payload.clear();
+        context.startNewMsg = true;
     }
 
     context.stage = Stage_Header;
@@ -200,7 +209,8 @@ bool StreamProcess::Dispatch(PacketContext &context)
 
     case MSG_TYPE_VIDEO:
         context.type = PacketType_Video;
-        //WriteH264(&context.payload[0], context.payload.size());
+        std::cerr << "dump h264: " << context.payload.size() << std::endl;
+        WriteH264(&context.payload[0], context.payload.size());
         OnVideo(context, &context.payload[0], context.payload.size());
         break;
 

@@ -20,7 +20,7 @@ int main()
     RtmpHeaderDecode decoder;
     RtmpHeaderEncode encoder;
 
-    decoder.Decode(buff1, sizeof(buff1) - 1);
+    decoder.Decode(buff1, sizeof(buff1) - 1, true);
     decoder.Dump();
 
     size = 14;
@@ -28,7 +28,7 @@ int main()
                    decoder.GetMsgHeader());
     encoder.Dump();
 
-    decoder.Decode(buff2, sizeof(buff2) - 1);
+    decoder.Decode(buff2, sizeof(buff2) - 1, true);
     decoder.Dump();
 
     size = 14;
@@ -36,7 +36,7 @@ int main()
                    decoder.GetMsgHeader());
     encoder.Dump();
 
-    decoder.Decode(buff3, sizeof(buff3) - 1);
+    decoder.Decode(buff3, sizeof(buff3) - 1, false);
     decoder.Dump();
 
     size = 14;
@@ -44,7 +44,7 @@ int main()
                    decoder.GetMsgHeader());
     encoder.Dump();
 
-    decoder.Decode(buff4, sizeof(buff4) - 1);
+    decoder.Decode(buff4, sizeof(buff4) - 1, true);
     decoder.Dump();
 
     size = 14;

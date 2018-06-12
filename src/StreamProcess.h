@@ -40,10 +40,11 @@ struct PacketContext
     PacketType type;
     RtmpHeaderDecode headerDecoder;
     std::string payload;
+    bool startNewMsg;
 
     PacketContext()
         : csId(0), stage(Stage_Header),
-          type(PacketType_NONE)
+          type(PacketType_NONE), startNewMsg(true)
     { }
 };
 

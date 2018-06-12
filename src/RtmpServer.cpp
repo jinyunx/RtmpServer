@@ -156,6 +156,8 @@ private:
             break;
 
         default:
+            if (message.msgHeader.typeId == 0x09)
+                std::cerr << message.msgHeader.timestamp << ", " << message.msgHeader.length << std::endl;
             m_streamProcess.SendChunk(message.csId, message.msgHeader,
                                       &message.payload[0]);
             break;

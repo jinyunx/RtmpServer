@@ -29,22 +29,30 @@ struct ChunkBasicHeader
 
 struct ChunkMsgHeader
 {
-    unsigned int timestamp;
+    // tsField: timestamp field, it would be
+    // 1. absolute time
+    // 2. delta time
+    // 3. 0xFFFFFF
+    unsigned int tsField;
     unsigned int length;
     unsigned int typeId;
     unsigned int streamId;
 
+    // the absolute time of message
+    unsigned int timestamp;
+
     ChunkMsgHeader()
-        : timestamp(0), length(0), typeId(0),
-          streamId(0)
+        : tsField(0), length(0), typeId(0),
+          streamId(0), timestamp(0)
     { }
 
     void Reset()
     {
-        timestamp = 0;
+        tsField = 0;
         length = 0;
         typeId = 0;
         streamId = 0;
+        timestamp = 0;
     }
 };
 
@@ -72,7 +80,7 @@ public:
         : m_complete(false), m_hasExtenedTimestamp(false)
     { }
 
-    RtmpHeaderState Decode(char *data, size_t len);
+    RtmpHeaderState Decode(char *data, size_t len, bool startNewMsg);
     RtmpHeaderState DecodeCsId(char *data, size_t len);
 
     ChunkMsgHeader GetMsgHeader() const;
@@ -88,10 +96,7 @@ public:
 
 private:
     RtmpHeaderState DecodeBasicHeader();
-    RtmpHeaderState DecodeMsgHeader();
-    RtmpHeaderState DecodeExtenedTimestamp();
-
-    void HandleTimestamp(const ChunkMsgHeader *lastMsgHeader);
+    RtmpHeaderState DecodeMsgHeader(bool startNewMsg);
 
     bool m_complete;
     bool m_hasExtenedTimestamp;
@@ -101,7 +106,6 @@ private:
     ByteStream m_byteStream;
 
     CsIdMsgHeader m_csIdMsgHeader;
-    CsIdHasExtended m_csIdHasExtended;
 };
 
 class RtmpHeaderEncode
