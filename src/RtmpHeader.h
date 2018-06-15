@@ -34,6 +34,7 @@ struct ChunkMsgHeader
     // 2. delta time
     // 3. 0xFFFFFF
     unsigned int tsField;
+
     unsigned int length;
     unsigned int typeId;
     unsigned int streamId;
@@ -41,9 +42,12 @@ struct ChunkMsgHeader
     // the absolute time of message
     unsigned int timestamp;
 
+    // externed timestamp
+    unsigned int externedTimestamp;
+
     ChunkMsgHeader()
         : tsField(0), length(0), typeId(0),
-          streamId(0), timestamp(0)
+          streamId(0), timestamp(0), externedTimestamp(0)
     { }
 
     void Reset()
@@ -53,31 +57,27 @@ struct ChunkMsgHeader
         typeId = 0;
         streamId = 0;
         timestamp = 0;
+        externedTimestamp = 0;
     }
-};
 
-struct ExtendedTimestamp
-{
-    unsigned int t;
-
-    ExtendedTimestamp()
-        : t(0)
-    { }
-
-    void Reset()
+    bool operator !=(const ChunkMsgHeader &header) const
     {
-        t = 0;
+        return (tsField != header.tsField ||
+                length != header.length ||
+                typeId != header.typeId ||
+                streamId != header.streamId ||
+                timestamp != header.timestamp ||
+                externedTimestamp != header.externedTimestamp);
     }
 };
 
 typedef std::map<int, ChunkMsgHeader> CsIdMsgHeader;
-typedef std::map<int, bool> CsIdHasExtended;
 
 class RtmpHeaderDecode
 {
 public:
     RtmpHeaderDecode()
-        : m_complete(false), m_hasExtenedTimestamp(false)
+        : m_complete(false)
     { }
 
     RtmpHeaderState Decode(char *data, size_t len, bool startNewMsg);
@@ -85,11 +85,9 @@ public:
 
     ChunkMsgHeader GetMsgHeader() const;
     ChunkBasicHeader GetBasicHeader() const;
-    ExtendedTimestamp GetExtendedTimestamp() const;
     int GetConsumeDataLen();
 
     bool IsComplete();
-    bool HasExtenedTimestamp();
     void Reset();
 
     void Dump();
@@ -99,10 +97,8 @@ private:
     RtmpHeaderState DecodeMsgHeader(bool startNewMsg);
 
     bool m_complete;
-    bool m_hasExtenedTimestamp;
     ChunkBasicHeader m_basicHeader;
     ChunkMsgHeader m_msgHeader;
-    ExtendedTimestamp m_extenedTimestamp;
     ByteStream m_byteStream;
 
     CsIdMsgHeader m_csIdMsgHeader;
@@ -113,31 +109,38 @@ class RtmpHeaderEncode
 public:
     RtmpHeaderEncode();
 
+    // Would modify tsField and externedTimestamp
+    // in msgHeader
     RtmpHeaderState Encode(char *data, size_t *len,
                            unsigned int csId,
-                           const ChunkMsgHeader &msgHeader);
-
-    bool HasExtendedTimestamp();
+                           ChunkMsgHeader &msgHeader,
+                           bool startNewMsg);
 
     void Dump();
 
 private:
+    RtmpHeaderState EncodeStartMsg(
+        unsigned int csId, ChunkMsgHeader *msgHeader,
+        const ChunkMsgHeader *lastMsgHeader);
+    RtmpHeaderState EncodeInterMsg(
+        unsigned int csId, const ChunkMsgHeader *msgHeader);
+
+    bool IsFmt0(const ChunkMsgHeader *msgHeader,
+                const ChunkMsgHeader *lastMsgHeader);
+    void SetTsField(ChunkMsgHeader *msgHeader,
+                    const ChunkMsgHeader *lastMsgHeader);
     unsigned int GetFmt(const ChunkMsgHeader *msgHeader,
                         const ChunkMsgHeader *lastMsgHeader);
 
     void SetBasicHeader(unsigned int fmt, unsigned int csIdchar);
     void SetMsgHeader(unsigned int fmt,
-                      const ChunkMsgHeader *msgHeader,
-                      const ChunkMsgHeader *lastMsgHeader,
-                      bool lastHasExtended);
+                      const ChunkMsgHeader *msgHeader);
 
     static const int kMaxBytes = 3 + 11;
 
-    bool m_hasExtended;
     ByteStream m_byteStream;
 
     CsIdMsgHeader m_csIdMsgHeader;
-    CsIdHasExtended m_csIdHasExtended;
 };
 
 #endif // RTMP_HEADER_H

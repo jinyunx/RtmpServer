@@ -15,11 +15,11 @@ namespace
     {
         for (size_t i = 0; i < size; ++i)
         {
-            printf("%x ", buf[i] & 0xff);
+            fprintf(stderr, "%x ", buf[i] & 0xff);
             if ((i + 1) % 16 == 0)
-                printf("\n");
+                fprintf(stderr, "\n");
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
 
     void WriteH264(char *buf, size_t size)
@@ -209,8 +209,8 @@ bool StreamProcess::Dispatch(PacketContext &context)
 
     case MSG_TYPE_VIDEO:
         context.type = PacketType_Video;
-        std::cerr << "dump h264: " << context.payload.size() << std::endl;
-        WriteH264(&context.payload[0], context.payload.size());
+        //std::cerr << "dump h264: " << context.payload.size() << std::endl;
+        //WriteH264(&context.payload[0], context.payload.size());
         OnVideo(context, &context.payload[0], context.payload.size());
         break;
 
@@ -557,7 +557,8 @@ void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *da
 
         buf.resize(kMaxHeaderBytes);
         size_t size = buf.size();
-        m_headerEncoder.Encode(&buf[0], &size, csId, msgHeader);
+        m_headerEncoder.Encode(
+            &buf[0], &size, csId, msgHeader, pos == 0);
         buf.resize(size);
 
         buf.append(data + pos, sizeToSend);
