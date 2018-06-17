@@ -1,4 +1,5 @@
 #include "StreamProcess.h"
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <iostream>
 
@@ -8,6 +9,7 @@
 #define MSG_TYPE_METADATA 0x12
 #define MSG_TYPE_VIDEO 0x09
 #define MSG_TYPE_AUDIO 0x08
+#define MSG_TYPE_PEER_BYTES_READ 0x03
 
 namespace
 {
@@ -218,6 +220,17 @@ bool StreamProcess::Dispatch(PacketContext &context)
         context.type = PacketType_Audio;
         OnAudio(context, &context.payload[0], context.payload.size());
         break;
+
+    case MSG_TYPE_PEER_BYTES_READ:
+    {
+        if (context.payload.size() != 4)
+            break;
+        char *p = const_cast<char *>(context.payload.data());
+        unsigned int read = *reinterpret_cast<unsigned int*>(p);
+        std::cerr << "MSG_TYPE_PEER_BYTES_READ read size:"
+                  << ntohl(read) << std::endl;
+        break;
+    }
 
     default:
         break;
@@ -563,7 +576,7 @@ void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *da
 
         buf.append(data + pos, sizeToSend);
 
-        PrintBuf(&buf[0], buf.size());
+        //PrintBuf(&buf[0], buf.size());
 
         if (m_onChunkSend)
             m_onChunkSend(&buf[0], buf.size());

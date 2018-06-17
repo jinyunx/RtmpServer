@@ -131,6 +131,7 @@ private:
 
         case PacketType_Play:
         {
+            SetReadTimeout(0);
             std::cerr << "Add player " << GetRemoteIpString()
                 << " to stream " << app << "/" << streamName << std::endl;
             m_player = boost::bind(&RtmpSession::Play, this, _1);
