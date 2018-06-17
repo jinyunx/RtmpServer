@@ -18,6 +18,7 @@ enum PacketType
     PacketType_MetaData,
     PacketType_Video,
     PacketType_Audio,
+    PacketType_BytesRead,
 };
 
 enum Stage
@@ -151,7 +152,7 @@ private:
     bool Dispatch(PacketContext &context);
     size_t GetNeedLength(size_t body);
 
-    bool Amf0Decode(char *data, size_t len, PacketContext &context);
+    bool Amf0Decode(PacketContext &context);
 
     bool ConnectDecode(char *data, size_t len,
                        const std::string &name,
@@ -183,14 +184,11 @@ private:
     void OnPlay(const PacketContext &context,
                 const PlayCommand &command);
 
-    void OnSetChunkSize(const PacketContext &context,
-                        const char *data, size_t len);
-    void OnMetaData(const PacketContext &context,
-                    const char *data, size_t len);
-    void OnVideo(const PacketContext &context,
-                 const char *data, size_t len);
-    void OnAudio(const PacketContext &context,
-                 const char *data, size_t len);
+    void OnSetChunkSize(const PacketContext &context);
+    void OnMetaData(const PacketContext &context);
+    void OnVideo(const PacketContext &context);
+    void OnAudio(const PacketContext &context);
+    void OnPeerBytesRead(const PacketContext &context);
 
     void SetWinAckSize();
     void SetPeerBandwidth();

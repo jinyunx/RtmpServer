@@ -194,41 +194,36 @@ bool StreamProcess::Dispatch(PacketContext &context)
     switch (context.headerDecoder.GetMsgHeader().typeId)
     {
     case MSG_TYPE_COMMAND:
-        if (!Amf0Decode(&context.payload[0], context.payload.size(),
-            context))
+        if (!Amf0Decode(context))
             return false;
         break;
 
     case MSG_TYPE_CHUNK_SIZE:
         context.type = PacketType_ChunkeSize;
-        OnSetChunkSize(context, &context.payload[0], context.payload.size());
+        OnSetChunkSize(context);
         break;
 
     case MSG_TYPE_METADATA:
         context.type = PacketType_MetaData;
-        OnMetaData(context, &context.payload[0], context.payload.size());
+        OnMetaData(context);
         break;
 
     case MSG_TYPE_VIDEO:
         context.type = PacketType_Video;
         //std::cerr << "dump h264: " << context.payload.size() << std::endl;
         //WriteH264(&context.payload[0], context.payload.size());
-        OnVideo(context, &context.payload[0], context.payload.size());
+        OnVideo(context);
         break;
 
     case MSG_TYPE_AUDIO:
         context.type = PacketType_Audio;
-        OnAudio(context, &context.payload[0], context.payload.size());
+        OnAudio(context);
         break;
 
     case MSG_TYPE_PEER_BYTES_READ:
     {
-        if (context.payload.size() != 4)
-            break;
-        char *p = const_cast<char *>(context.payload.data());
-        unsigned int read = *reinterpret_cast<unsigned int*>(p);
-        std::cerr << "MSG_TYPE_PEER_BYTES_READ read size:"
-                  << ntohl(read) << std::endl;
+        context.type = PacketType_BytesRead;
+        OnPeerBytesRead(context);
         break;
     }
 
@@ -246,9 +241,10 @@ size_t StreamProcess::GetNeedLength(size_t body)
     return body + (body-1) / m_revcChunkSize;
 }
 
-bool StreamProcess::Amf0Decode(char *data, size_t len, PacketContext &context)
+bool StreamProcess::Amf0Decode(PacketContext &context)
 {
-    Amf0Helper helper(data, len);
+    Amf0Helper helper(const_cast<char *>(context.payload.data()),
+                      context.payload.size());
 
     std::string name;
     if (helper.Expect(AMF_STRING))
@@ -510,49 +506,84 @@ void StreamProcess::OnPlay(const PacketContext &context,
     printf("OnPlay result\n");
     ResponseResult(command.transactionId);
 
+    m_role = Role_Player;
+
     if (m_onChunkRecv)
         m_onChunkRecv(context, &command);
-
-    m_role = Role_Player;
 }
 
-void StreamProcess::OnSetChunkSize(const PacketContext & context,
-                                   const char * data, size_t len)
+void StreamProcess::OnSetChunkSize(const PacketContext & context)
 {
+    if (context.payload.size() < 4)
+    {
+        std::cerr << "OnSetChunkSize data size error" << std::endl;
+        return;
+    }
+
     ByteStream byteStream;
-    byteStream.Initialize((char *)data, len);
+    byteStream.Initialize(const_cast<char *>(context.payload.data()),
+                          context.payload.size());
     m_revcChunkSize = byteStream.Read4Bytes();
 
     if (m_onChunkRecv)
         m_onChunkRecv(context, &m_revcChunkSize);
 }
 
-void StreamProcess::OnMetaData(const PacketContext &context,
-                               const char *data, size_t len)
+void StreamProcess::OnMetaData(const PacketContext &context)
 {
     if (m_onChunkRecv)
         m_onChunkRecv(context, 0);
 }
 
-void StreamProcess::OnVideo(const PacketContext &context,
-                            const char *data, size_t len)
+void StreamProcess::OnVideo(const PacketContext &context)
 {
+    if (context.payload.size() < 2)
+    {
+        std::cerr << "video data size error" << std::endl;
+        return;
+    }
+
     VideoInfo videoInfo;
-    videoInfo.isKeyFrame = data[0] & 0x10;
-    videoInfo.isSpspps = data[1] == 0;
+    videoInfo.isKeyFrame = context.payload[0] & 0x10;
+    videoInfo.isSpspps = context.payload[1] == 0;
 
     if (m_onChunkRecv)
         m_onChunkRecv(context, &videoInfo);
 }
 
-void StreamProcess::OnAudio(const PacketContext &context,
-                            const char *data, size_t len)
+void StreamProcess::OnAudio(const PacketContext &context)
 {
+    if (context.payload.size() < 2)
+    {
+        std::cerr << "audio data size error" << std::endl;
+        return;
+    }
+
     AudioInfo audioInfo;
-    audioInfo.isSeqHeader = data[1] == 0;
+    audioInfo.isSeqHeader = context.payload[1] == 0;
 
     if (m_onChunkRecv)
         m_onChunkRecv(context, &audioInfo);
+}
+
+void StreamProcess::OnPeerBytesRead(const PacketContext &context)
+{
+    if (context.payload.size() < 4)
+    {
+        std::cerr << "OnPeerBytesRead data size error" << std::endl;
+        return;
+    }
+
+    ByteStream byteStream;
+    byteStream.Initialize(const_cast<char *>(context.payload.data()),
+                          context.payload.size());
+    unsigned int peerBytesRead = byteStream.Read4Bytes();
+
+    std::cerr << "MSG_TYPE_PEER_BYTES_READ read size:"
+              << peerBytesRead << std::endl;
+
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &peerBytesRead);
 }
 
 void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *data)
