@@ -18,7 +18,8 @@ enum PacketType
     PacketType_MetaData,
     PacketType_Video,
     PacketType_Audio,
-    PacketType_BytesRead,
+    PacketType_PeerBytesRead,
+    PacketType_PeerAckWinSize,
 };
 
 enum Stage
@@ -189,6 +190,7 @@ private:
     void OnVideo(const PacketContext &context);
     void OnAudio(const PacketContext &context);
     void OnPeerBytesRead(const PacketContext &context);
+    void OnPeerAckWinSize(const PacketContext &context);
 
     void SetWinAckSize();
     void SetPeerBandwidth();

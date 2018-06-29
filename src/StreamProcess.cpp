@@ -221,13 +221,19 @@ bool StreamProcess::Dispatch(PacketContext &context)
         break;
 
     case MSG_TYPE_PEER_BYTES_READ:
-    {
-        context.type = PacketType_BytesRead;
+        context.type = PacketType_PeerBytesRead;
         OnPeerBytesRead(context);
         break;
-    }
+
+    case MSG_TYPE_WINACK_SIZE:
+        context.type = PacketType_PeerAckWinSize;
+        OnPeerAckWinSize(context);
+        break;
 
     default:
+        std::cerr << "not support rtmp msg type: "
+                  << context.headerDecoder.GetMsgHeader().typeId
+                  << std::endl;
         break;
     }
     return true;
@@ -584,6 +590,26 @@ void StreamProcess::OnPeerBytesRead(const PacketContext &context)
 
     if (m_onChunkRecv)
         m_onChunkRecv(context, &peerBytesRead);
+}
+
+void StreamProcess::OnPeerAckWinSize(const PacketContext &context)
+{
+    if (context.payload.size() < 4)
+    {
+        std::cerr << "OnPeerBytesRead data size error" << std::endl;
+        return;
+    }
+
+    ByteStream byteStream;
+    byteStream.Initialize(const_cast<char *>(context.payload.data()),
+                          context.payload.size());
+    unsigned int peerAckWinSize = byteStream.Read4Bytes();
+
+    std::cerr << "peer will ack when recive size:"
+              << peerAckWinSize << std::endl;
+
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &peerAckWinSize);
 }
 
 void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *data)
