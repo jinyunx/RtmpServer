@@ -1,5 +1,7 @@
 #include "StreamProcess.h"
-#include "stdio.h"
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <iostream>
 
 #define MSG_TYPE_CHUNK_SIZE 0x01
 #define MSG_TYPE_WINACK_SIZE 0x05
@@ -7,6 +9,7 @@
 #define MSG_TYPE_METADATA 0x12
 #define MSG_TYPE_VIDEO 0x09
 #define MSG_TYPE_AUDIO 0x08
+#define MSG_TYPE_PEER_BYTES_READ 0x03
 
 namespace
 {
@@ -14,11 +17,11 @@ namespace
     {
         for (size_t i = 0; i < size; ++i)
         {
-            printf("%x ", buf[i] & 0xff);
+            fprintf(stderr, "%x ", buf[i] & 0xff);
             if ((i + 1) % 16 == 0)
-                printf("\n");
+                fprintf(stderr, "\n");
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
 
     void WriteH264(char *buf, size_t size)
@@ -110,7 +113,8 @@ int StreamProcess::Process(char *data, size_t len)
     context.csId = csId;
     if (context.stage == Stage_Header)
     {
-        RtmpHeaderState state = context.headerDecoder.Decode(data, len);
+        RtmpHeaderState state = context.headerDecoder.Decode(
+            data, len, context.startNewMsg);
 
         if (state == RtmpHeaderState_Error)
             return -1;
@@ -136,12 +140,19 @@ int StreamProcess::Process(char *data, size_t len)
     if (len < needLen)
         return 0;
 
+    // Message slice to multi chunks,
+    // get one chunk and next chunk is not
+    // the start of message
     context.payload.append(data, needLen);
+    context.startNewMsg = false;
 
     if (context.payload.size() == msgLen)
     {
+        // Dispatch one message and
+        // ready to start new message
         Dispatch(context);
         context.payload.clear();
+        context.startNewMsg = true;
     }
 
     context.stage = Stage_Header;
@@ -183,33 +194,46 @@ bool StreamProcess::Dispatch(PacketContext &context)
     switch (context.headerDecoder.GetMsgHeader().typeId)
     {
     case MSG_TYPE_COMMAND:
-        if (!Amf0Decode(&context.payload[0], context.payload.size(),
-            context))
+        if (!Amf0Decode(context))
             return false;
         break;
 
     case MSG_TYPE_CHUNK_SIZE:
         context.type = PacketType_ChunkeSize;
-        OnSetChunkSize(context, &context.payload[0], context.payload.size());
+        OnSetChunkSize(context);
         break;
 
     case MSG_TYPE_METADATA:
         context.type = PacketType_MetaData;
-        OnMetaData(context, &context.payload[0], context.payload.size());
+        OnMetaData(context);
         break;
 
     case MSG_TYPE_VIDEO:
         context.type = PacketType_Video;
+        //std::cerr << "dump h264: " << context.payload.size() << std::endl;
         //WriteH264(&context.payload[0], context.payload.size());
-        OnVideo(context, &context.payload[0], context.payload.size());
+        OnVideo(context);
         break;
 
     case MSG_TYPE_AUDIO:
         context.type = PacketType_Audio;
-        OnAudio(context, &context.payload[0], context.payload.size());
+        OnAudio(context);
+        break;
+
+    case MSG_TYPE_PEER_BYTES_READ:
+        context.type = PacketType_PeerBytesRead;
+        OnPeerBytesRead(context);
+        break;
+
+    case MSG_TYPE_WINACK_SIZE:
+        context.type = PacketType_PeerAckWinSize;
+        OnPeerAckWinSize(context);
         break;
 
     default:
+        std::cerr << "not support rtmp msg type: "
+                  << context.headerDecoder.GetMsgHeader().typeId
+                  << std::endl;
         break;
     }
     return true;
@@ -223,9 +247,10 @@ size_t StreamProcess::GetNeedLength(size_t body)
     return body + (body-1) / m_revcChunkSize;
 }
 
-bool StreamProcess::Amf0Decode(char *data, size_t len, PacketContext &context)
+bool StreamProcess::Amf0Decode(PacketContext &context)
 {
-    Amf0Helper helper(data, len);
+    Amf0Helper helper(const_cast<char *>(context.payload.data()),
+                      context.payload.size());
 
     std::string name;
     if (helper.Expect(AMF_STRING))
@@ -487,49 +512,104 @@ void StreamProcess::OnPlay(const PacketContext &context,
     printf("OnPlay result\n");
     ResponseResult(command.transactionId);
 
+    m_role = Role_Player;
+
     if (m_onChunkRecv)
         m_onChunkRecv(context, &command);
-
-    m_role = Role_Player;
 }
 
-void StreamProcess::OnSetChunkSize(const PacketContext & context,
-                                   const char * data, size_t len)
+void StreamProcess::OnSetChunkSize(const PacketContext & context)
 {
+    if (context.payload.size() < 4)
+    {
+        std::cerr << "OnSetChunkSize data size error" << std::endl;
+        return;
+    }
+
     ByteStream byteStream;
-    byteStream.Initialize((char *)data, len);
+    byteStream.Initialize(const_cast<char *>(context.payload.data()),
+                          context.payload.size());
     m_revcChunkSize = byteStream.Read4Bytes();
 
     if (m_onChunkRecv)
         m_onChunkRecv(context, &m_revcChunkSize);
 }
 
-void StreamProcess::OnMetaData(const PacketContext &context,
-                               const char *data, size_t len)
+void StreamProcess::OnMetaData(const PacketContext &context)
 {
     if (m_onChunkRecv)
         m_onChunkRecv(context, 0);
 }
 
-void StreamProcess::OnVideo(const PacketContext &context,
-                            const char *data, size_t len)
+void StreamProcess::OnVideo(const PacketContext &context)
 {
+    if (context.payload.size() < 2)
+    {
+        std::cerr << "video data size error" << std::endl;
+        return;
+    }
+
     VideoInfo videoInfo;
-    videoInfo.isKeyFrame = data[0] & 0x10;
-    videoInfo.isSpspps = data[1] == 0;
+    videoInfo.isKeyFrame = context.payload[0] & 0x10;
+    videoInfo.isSpspps = context.payload[1] == 0;
 
     if (m_onChunkRecv)
         m_onChunkRecv(context, &videoInfo);
 }
 
-void StreamProcess::OnAudio(const PacketContext &context,
-                            const char *data, size_t len)
+void StreamProcess::OnAudio(const PacketContext &context)
 {
+    if (context.payload.size() < 2)
+    {
+        std::cerr << "audio data size error" << std::endl;
+        return;
+    }
+
     AudioInfo audioInfo;
-    audioInfo.isSeqHeader = data[1] == 0;
+    audioInfo.isSeqHeader = context.payload[1] == 0;
 
     if (m_onChunkRecv)
         m_onChunkRecv(context, &audioInfo);
+}
+
+void StreamProcess::OnPeerBytesRead(const PacketContext &context)
+{
+    if (context.payload.size() < 4)
+    {
+        std::cerr << "OnPeerBytesRead data size error" << std::endl;
+        return;
+    }
+
+    ByteStream byteStream;
+    byteStream.Initialize(const_cast<char *>(context.payload.data()),
+                          context.payload.size());
+    unsigned int peerBytesRead = byteStream.Read4Bytes();
+
+    std::cerr << "MSG_TYPE_PEER_BYTES_READ read size:"
+              << peerBytesRead << std::endl;
+
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &peerBytesRead);
+}
+
+void StreamProcess::OnPeerAckWinSize(const PacketContext &context)
+{
+    if (context.payload.size() < 4)
+    {
+        std::cerr << "OnPeerBytesRead data size error" << std::endl;
+        return;
+    }
+
+    ByteStream byteStream;
+    byteStream.Initialize(const_cast<char *>(context.payload.data()),
+                          context.payload.size());
+    unsigned int peerAckWinSize = byteStream.Read4Bytes();
+
+    std::cerr << "peer will ack when recive size:"
+              << peerAckWinSize << std::endl;
+
+    if (m_onChunkRecv)
+        m_onChunkRecv(context, &peerAckWinSize);
 }
 
 void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *data)
@@ -547,12 +627,13 @@ void StreamProcess::SendChunk(int csId, ChunkMsgHeader msgHeader, const char *da
 
         buf.resize(kMaxHeaderBytes);
         size_t size = buf.size();
-        m_headerEncoder.Encode(&buf[0], &size, csId, msgHeader);
+        m_headerEncoder.Encode(
+            &buf[0], &size, csId, msgHeader, pos == 0);
         buf.resize(size);
 
         buf.append(data + pos, sizeToSend);
 
-        PrintBuf(&buf[0], buf.size());
+        //PrintBuf(&buf[0], buf.size());
 
         if (m_onChunkSend)
             m_onChunkSend(&buf[0], buf.size());
