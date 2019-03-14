@@ -53,7 +53,7 @@ namespace
 
                 // 00 00 00 01
                 fwrite("\x00\x00\x00\x01", 4, 1, fd);
-                
+
                 fwrite(buf+2, length, 1, fd);
 
                 // skip 01
@@ -171,17 +171,17 @@ void StreamProcess::Dump()
            m_connectCommand.app.c_str(), m_connectCommand.tcUrl.c_str());
 }
 
-const std::string & StreamProcess::GetApp()
+const std::string & StreamProcess::GetApp() const
 {
     return m_app;
 }
 
-const std::string & StreamProcess::GetStreamName()
+const std::string & StreamProcess::GetStreamName() const
 {
     return m_streamName;
 }
 
-Role StreamProcess::GetRole()
+Role StreamProcess::GetRole() const
 {
     return m_role;
 }

@@ -145,9 +145,9 @@ public:
 
     void SendChunk(int csId, ChunkMsgHeader msgHeader, const char *data);
 
-    const std::string &GetApp();
-    const std::string &GetStreamName();
-    Role GetRole();
+    const std::string &GetApp() const;
+    const std::string &GetStreamName() const;
+    Role GetRole() const;
 
 private:
     bool Dispatch(PacketContext &context);

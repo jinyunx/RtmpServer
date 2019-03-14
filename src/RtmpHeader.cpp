@@ -71,8 +71,8 @@ RtmpHeaderState RtmpHeaderDecode::DecodeBasicHeader()
         return RtmpHeaderState_NotEnoughData;
 
     char oneByte = m_byteStream.Read1Bytes();
-    m_basicHeader.csId = static_cast<unsigned int>(oneByte & 0x3f);
     m_basicHeader.fmt = static_cast<unsigned int>(oneByte >> 6 & 0x03);
+    m_basicHeader.csId = static_cast<unsigned int>(oneByte & 0x3f);
 
     switch (m_basicHeader.csId)
     {
