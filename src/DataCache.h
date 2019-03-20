@@ -1,7 +1,8 @@
 #ifndef DATA_CACHE_H
 #define DATA_CACHE_H
 #include "RtmpHeader.h"
-#include "boost/function.hpp"
+#include "CoSocket/net/CoQueue.h"
+#include <functional>
 #include <string>
 #include <vector>
 #include <set>
@@ -25,18 +26,20 @@ struct AVMessage
     { }
 };
 
-typedef std::vector<AVMessage> Gop;
-typedef boost::function<void(const AVMessage &)> Player;
+typedef CoQueue<AVMessage> AVMessageQueue;
+typedef std::shared_ptr<AVMessageQueue> AVMessageQueuePtr;
+typedef AVMessageQueue::DataPtr AVMessagePtr;
 
-typedef std::set<const Player *> PlayerSet;
+typedef std::vector<AVMessagePtr> Gop;
+typedef std::set<AVMessageQueuePtr> PlayerQueueSet;
 
 struct StreamCache
 {
     Gop gop;
-    AVMessage meta;
-    AVMessage spspps;
-    AVMessage seqheader;
-    PlayerSet players;
+    AVMessagePtr meta;
+    AVMessagePtr spspps;
+    AVMessagePtr seqheader;
+    PlayerQueueSet playerQueues;
 };
 
 typedef std::map<std::string, StreamCache> StreamCacheMap;
@@ -58,18 +61,18 @@ public:
 
     void DeleteStream(const std::string &app, const std::string &streamName);
 
-    bool AddPlayer(const std::string &app, const std::string &streamName,
-                   const Player &player);
-    void DeletePlayer(const std::string &app, const std::string &streamName,
-                      const Player &player);
+    bool AddPlayerQueue(const std::string &app, const std::string &streamName,
+                        const AVMessageQueuePtr &player);
+    void DeletePlayerQueue(const std::string &app, const std::string &streamName,
+                           const AVMessageQueuePtr &player);
 
     const StreamCacheMap &GetStreamCache();
 
 private:
     std::string GetAppStream(const std::string &app,
                              const std::string &streamName);
-    void PushToPlayer(const std::string &app, const std::string &streamName,
-                      const AVMessage &avMessage);
+    void PushToPlayerQueue(const std::string &app, const std::string &streamName,
+                           const AVMessagePtr &avMessage);
 
     StreamCacheMap m_streamCache;
 };

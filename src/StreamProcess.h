@@ -3,7 +3,7 @@
 
 #include "RtmpHeader.h"
 #include "Amf0Helper.h"
-#include "boost/function.hpp"
+#include <functional>
 #include <string>
 
 enum PacketType
@@ -128,8 +128,8 @@ struct PlayCommand
 // CS ID to PacketContext
 typedef std::map<int, PacketContext> PacketContextMap;
 
-typedef boost::function<void(const PacketContext &, const void *)> OnChunkRecv;
-typedef boost::function<void(const char *, size_t)> OnChunkSend;
+typedef std::function<void(const PacketContext &, const void *)> OnChunkRecv;
+typedef std::function<void(const char *, size_t)> OnChunkSend;
 
 class StreamProcess
 {

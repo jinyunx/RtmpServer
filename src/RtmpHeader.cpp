@@ -219,9 +219,8 @@ RtmpHeaderState RtmpHeaderEncode::Encode(
     return RtmpHeaderState_Ok;
 }
 
-RtmpHeaderState RtmpHeaderEncode::EncodeStartMsg(
-    unsigned int csId,
-    ChunkMsgHeader *msgHeader,
+void RtmpHeaderEncode::EncodeStartMsg(
+    unsigned int csId, ChunkMsgHeader *msgHeader,
     const ChunkMsgHeader *lastMsgHeader)
 {
     SetTsField(msgHeader, lastMsgHeader);
@@ -231,9 +230,8 @@ RtmpHeaderState RtmpHeaderEncode::EncodeStartMsg(
     SetMsgHeader(fmt, msgHeader);
 }
 
-RtmpHeaderState RtmpHeaderEncode::EncodeInterMsg(
-    unsigned int csId,
-    const ChunkMsgHeader *msgHeader)
+void RtmpHeaderEncode::EncodeInterMsg(
+    unsigned int csId, const ChunkMsgHeader *msgHeader)
 {
     SetBasicHeader(3, csId);
     SetMsgHeader(3, msgHeader);

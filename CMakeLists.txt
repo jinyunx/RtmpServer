@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 2.6)
 
 project(RtmpeServer)
 
+add_subdirectory(${PROJECT_SOURCE_DIR}/../CoSocket/CoSocket CoSocket)
+
 set(CMAKE_C_FLAGS
     "-Wall -Wextra -Wno-unused-parameter")
 
@@ -12,7 +14,7 @@ set(CMAKE_C_FLAGS_RELEASE
     "-O3 -g -DRELEASE -DNDEBUG")
 
 set(CMAKE_CXX_FLAGS
-    "-Wall -Wextra -Wno-unused-parameter")
+    "-Wall -Wextra -Wno-unused-parameter -std=c++11")
 
 set(CMAKE_CXX_FLAGS_DEBUG
     "-g")
@@ -28,24 +30,11 @@ set(CMAKE_USE_RELATIVE_PATHS TRUE)
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_BINARY_DIR}/bin")
 set(LIBRARY_OUTPUT_PATH "${PROJECT_BINARY_DIR}/lib")
 
-
-include_directories("/root/onexie/cppDev/boost/include")
 include_directories("${PROJECT_BINARY_DIR}/3rd")
-include_directories("${PROJECT_BINARY_DIR}/../libpublic")
-
-add_library(http
-    ${PROJECT_BINARY_DIR}/../libpublic/libhttp/HttpDispatch.cpp
-    ${PROJECT_BINARY_DIR}/../libpublic/libhttp/HttpParser.cpp
-    ${PROJECT_BINARY_DIR}/../libpublic/libhttp/HttpServer.cpp
-    ${PROJECT_BINARY_DIR}/../libpublic/3rd/http-parser/http_parser.c
-    )
-
-target_link_libraries(http
-    libboost_system.a
-    libboost_coroutine.a
-    libboost_thread.a
-    libboost_context.a
-    )
+include_directories("${PROJECT_BINARY_DIR}/../CoSocket")
+include_directories("${PROJECT_BINARY_DIR}/../CoSocket/CoSocket/net")
+include_directories("${PROJECT_BINARY_DIR}/../CoSocket/CoSocket/base")
+include_directories("${PROJECT_BINARY_DIR}/../CoSocket/CoSocket/3rd")
 
 add_library(amfx
     ${PROJECT_BINARY_DIR}/3rd/libamfx/amf.cc
@@ -70,6 +59,7 @@ target_link_libraries(StreamProcessTest
     )
 
 add_executable(RtmpServer
+    src/Main.cpp
     src/RtmpServer.cpp
     src/StreamProcess.cpp
     src/ByteStream.cpp
@@ -78,7 +68,7 @@ add_executable(RtmpServer
     )
 
 target_link_libraries(RtmpServer
-    http
+    CoSocket
     amfx
     pthread
     )

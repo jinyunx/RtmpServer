@@ -1,221 +1,238 @@
 #include "RtmpServer.h"
-#include "HandShake.h"
-#include "StreamProcess.h"
 
-class RtmpSession : public Session
+#include "CoSocket/net/Timer.h"
+#include "CoSocket/base/SimpleLog.h"
+
+#include <iostream>
+
+RtmpServer::RtmpServer(TcpServer::ConnectorPtr &connector, DataCache &dataCache)
+    : m_stop(false), m_playing(false), readTimeout(kTimeoutMs),
+      writeTimeout(kTimeoutMs), m_connector(connector), m_dataCache(dataCache)
 {
-public:
-    RtmpSession(boost::asio::io_service &service,
-                DataCache &dataCache)
-        : Session(service), m_dataCache(dataCache),
-          m_handShake(boost::bind(&RtmpSession::WriteResponse, this, _1, _2)),
-          m_streamProcess(boost::bind(&RtmpSession::WriteResponse, this, _1, _2))
+}
+
+RtmpServer::~RtmpServer()
+{
+    Timer timer(m_connector->GetCoSocket());
+    while (m_playing)
+        timer.Wait(500);
+
+    const char *role = 0;
+    switch (m_streamProcess->GetRole())
     {
-        m_streamProcess.SetOnChunkRecv(boost::bind(
-            &RtmpSession::HandleMessage, this, _1, _2));
+        case Role_Player:
+            role = "Player";
+            break;
+
+        case Role_Publisher:
+            role = "Publisher";
+            break;
+
+        case Role_Unknow:
+        default:
+            role = "Unknow";
+            break;
+    }
+    SIMPLE_LOG("%s role exit", role);
+}
+
+void RtmpServer::operator() ()
+{
+    m_handShake.reset(new HandShake(
+        std::bind(&RtmpServer::WriteResponse, this,
+                  std::placeholders::_1, std::placeholders::_2)));
+
+    m_streamProcess.reset(new StreamProcess(
+        std::bind(&RtmpServer::WriteResponse, this,
+                  std::placeholders:: _1, std::placeholders::_2)));
+
+    m_streamProcess->SetOnChunkRecv(
+        std::bind(&RtmpServer::HandleMessage, this,
+                  std::placeholders:: _1, std::placeholders::_2));
+
+    std::vector<char> buffer(1024);
+    while(!m_stop)
+    {
+        int ret = m_connector->Read(buffer.data(), buffer.size(), readTimeout);
+        if (ret <= 0)
+        {
+            SIMPLE_LOG("read failed, error: %d", ret);
+            break;
+        }
+
+        if (!OnData(buffer.data(), ret))
+            break;
+    }
+    CleanDataCache();
+    Shutdown();
+}
+
+bool RtmpServer::OnData(const char *buffer, std::size_t bufferLength)
+{
+    m_buffer.append(buffer, bufferLength);
+
+    if (!m_handShake->IsComplete())
+    {
+        int ret = m_handShake->Parse(&m_buffer[0], m_buffer.size());
+        if (m_handShake->IsComplete())
+            SIMPLE_LOG("Hand shake success.");
+
+        if (ret < 0)
+        {
+            SIMPLE_LOG("Hand shake error.");
+            return false;
+        }
+
+        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + ret);
     }
 
-    ~RtmpSession()
-    { }
-
-private:
-    virtual bool OnData(const char *buffer, std::size_t bufferLength)
+    if (m_handShake->IsComplete())
     {
-        m_buffer.append(buffer, bufferLength);
+        int ret = -1;
+        do {
+            ret = m_streamProcess->Process(const_cast<char *>(m_buffer.data()), m_buffer.size());
+            m_streamProcess->Dump();
 
-        if (!m_handShake.IsComplete())
-        {
-            int rt = m_handShake.Parse(&m_buffer[0], m_buffer.size());
-            if (m_handShake.IsComplete())
-                std::cerr << "Hand shake success." << std::endl;
-
-            if (rt < 0)
+            if (ret < 0)
             {
-                std::cerr << "Handshake error" << std::endl;
+                SIMPLE_LOG("Process message error.");
                 return false;
             }
-            m_buffer.erase(m_buffer.begin(), m_buffer.begin() + rt);
-        }
 
-        if (m_handShake.IsComplete())
-        {
-            int rt = -1;
-            do {
-                rt = m_streamProcess.Process(const_cast<char *>(m_buffer.data()), m_buffer.size());
-                m_streamProcess.Dump();
+            m_buffer.erase(m_buffer.begin(), m_buffer.begin() + ret);
+        } while (ret > 0);
+    }
+    return true;
+}
 
-                if (rt < 0)
-                {
-                    std::cerr << "Process message error" << std::endl;
-                    return false;
-                }
-                m_buffer.erase(m_buffer.begin(), m_buffer.begin() + rt);
-            } while (rt > 0);
-        }
-        return true;
+void RtmpServer::CleanDataCache()
+{
+    const std::string &app = m_streamProcess->GetApp();
+    const std::string &streamName = m_streamProcess->GetStreamName();
+    Role role = m_streamProcess->GetRole();
+    if (role == Role_Player)
+    {
+        SIMPLE_LOG("Remove player from stream %s/%s", app.c_str(), streamName.c_str());
+        m_dataCache.DeletePlayerQueue(app, streamName, m_playQueue);
+    }
+    else if (role == Role_Publisher)
+    {
+        SIMPLE_LOG("Remove stream %s/%s", app.c_str(), streamName.c_str());
+        m_dataCache.DeleteStream(app, streamName);
     }
 
-    virtual void OnClose()
-    {
-        const std::string &app = m_streamProcess.GetApp();
-        const std::string &streamName = m_streamProcess.GetStreamName();
-        Role r = m_streamProcess.GetRole();
-        if (r == Role_Player)
-        {
-            std::cerr << "Remove player " << GetRemoteIpString()
-                << " from stream " << app << "/" << streamName << std::endl;
-            m_dataCache.DeletePlayer(app, streamName, m_player);
-        }
-        else if (r == Role_Publisher)
-        {
-            std::cerr << "Remove stream " << app << "/" << streamName << std::endl;
-            m_dataCache.DeleteStream(app, streamName);
-        }
+    SIMPLE_LOG("Clean data cache finished");
+}
 
-        std::cerr << "OnClose finished" << std::endl;
+void RtmpServer::HandleMessage(const PacketContext &packet, const void *info)
+{
+    const std::string &app = m_streamProcess->GetApp();
+    const std::string &streamName = m_streamProcess->GetStreamName();
+
+    switch (packet.type)
+    {
+    case PacketType_MetaData:
+    {
+        SIMPLE_LOG("Recv meta data message");
+        m_dataCache.SetMetaData(app, streamName, packet.csId,
+                                packet.headerDecoder.GetMsgHeader(),
+                                &packet.payload[0]);
+        break;
     }
 
-    void HandleMessage(const PacketContext &packet, const void *info)
+    case PacketType_Video:
     {
-        const std::string &app = m_streamProcess.GetApp();
-        const std::string &streamName = m_streamProcess.GetStreamName();
-
-        switch (packet.type)
+        VideoInfo *vinfo = (VideoInfo *)info;
+        if (vinfo->isSpspps)
         {
-        case PacketType_MetaData:
-        {
-            std::cerr << "Recv meta data message" << std::endl;
-            m_dataCache.SetMetaData(app, streamName, packet.csId,
-                                    packet.headerDecoder.GetMsgHeader(),
-                                    &packet.payload[0]);
-            break;
+            SIMPLE_LOG("Recv sps/pps message");
+            m_dataCache.SetSpspps(app, streamName, packet.csId,
+                                  packet.headerDecoder.GetMsgHeader(),
+                                  &packet.payload[0]);
         }
-
-        case PacketType_Video:
+        else
         {
-            VideoInfo *vinfo = (VideoInfo *)info;
-            if (vinfo->isSpspps)
-            {
-                std::cerr << "Recv sps/pps message" << std::endl;
-                m_dataCache.SetSpspps(app, streamName, packet.csId,
-                                      packet.headerDecoder.GetMsgHeader(),
-                                      &packet.payload[0]);
-            }
-            else
-            {
-                m_dataCache.AddVideo(app, streamName, packet.csId,
-                                     packet.headerDecoder.GetMsgHeader(),
-                                     vinfo->isKeyFrame, &packet.payload[0]);
-            }
-            break;
+            m_dataCache.AddVideo(app, streamName, packet.csId,
+                                 packet.headerDecoder.GetMsgHeader(),
+                                 vinfo->isKeyFrame, &packet.payload[0]);
         }
+        break;
+    }
 
-        case PacketType_Audio:
+    case PacketType_Audio:
+    {
+        AudioInfo *ainfo = (AudioInfo *)info;
+        if (ainfo->isSeqHeader)
         {
-            AudioInfo *ainfo = (AudioInfo *)info;
-            if (ainfo->isSeqHeader)
-            {
-                std::cerr << "Recv aac sequence header message" << std::endl;
-                m_dataCache.SetSeqheader(app, streamName, packet.csId,
-                                         packet.headerDecoder.GetMsgHeader(),
-                                         &packet.payload[0]);
-            }
-            else
-            {
-                m_dataCache.AddAudio(app, streamName, packet.csId,
+            SIMPLE_LOG("Recv aac sequence header message");
+            m_dataCache.SetSeqheader(app, streamName, packet.csId,
                                      packet.headerDecoder.GetMsgHeader(),
                                      &packet.payload[0]);
-            }
-            break;
         }
-
-        case PacketType_Play:
+        else
         {
-            SetReadTimeout(0);
-            std::cerr << "Add player " << GetRemoteIpString()
-                << " to stream " << app << "/" << streamName << std::endl;
-            m_player = boost::bind(&RtmpSession::Play, this, _1);
-            if (!m_dataCache.AddPlayer(app, streamName, m_player))
-            {
-                std::cerr << "No stream " << app << "/" << streamName << std::endl;
-                Shutdown();
-            }
-            break;
+            m_dataCache.AddAudio(app, streamName, packet.csId,
+                                 packet.headerDecoder.GetMsgHeader(),
+                                 &packet.payload[0]);
         }
-
-        default:
-            break;
-        }
+        break;
     }
 
-    void Play(const AVMessage &message)
+    case PacketType_Play:
     {
-        switch (message.type)
+        SIMPLE_LOG("Add player to stream %s/%s", app.c_str(), streamName.c_str());
+
+        m_playQueue.reset(new AVMessageQueue(m_connector->GetCoSocket()));
+        if (!m_dataCache.AddPlayerQueue(app, streamName, m_playQueue))
+        {
+            SIMPLE_LOG("No stream %s/%s", app.c_str(), streamName.c_str());
+            Shutdown();
+        }
+
+        m_connector->GetCoSocket().NewCoroutine(std::bind(&RtmpServer::Play, this));
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+void RtmpServer::Play()
+{
+    m_playing = true;
+    while (!m_stop)
+    {
+        AVMessagePtr message = m_playQueue->Deque();
+        switch (message->type)
         {
         case MessageType_Close:
             Shutdown();
             break;
 
         default:
-            m_streamProcess.SendChunk(message.csId, message.msgHeader,
-                                      &message.payload[0]);
+            m_streamProcess->SendChunk(
+                message->csId, message->msgHeader, &message->payload[0]);
             break;
         }
     }
-
-    DataCache &m_dataCache;
-    HandShake m_handShake;
-    StreamProcess m_streamProcess;
-    Player m_player;
-    std::string m_buffer;
-};
-
-RtmpServer::RtmpServer(boost::asio::io_service &service)
-    : m_service(service), m_httpDispatch(80, service),
-      m_tcpServer(1935, service, boost::bind(
-          &RtmpServer::NewSession, this))
-{
-    m_httpDispatch.AddHandler("/status", boost::bind(&RtmpServer::HandleStatus,
-                                                     this, _1, _2));
+    m_playing = false;
+    SIMPLE_LOG("Player sub-routine exit");
 }
 
-void RtmpServer::Start()
+ssize_t RtmpServer::WriteResponse(const char *buffer, size_t size)
 {
-    m_httpDispatch.Go();
-    m_tcpServer.Go();
-}
-
-SessionPtr RtmpServer::NewSession()
-{
-    return SessionPtr(new RtmpSession(m_service, m_dataCache));
-}
-
-void RtmpServer::HandleStatus(const HttpRequester &request,
-                              HttpResponser &response)
-{
-    const StreamCacheMap &cache = m_dataCache.GetStreamCache();
-
-    std::ostringstream body;
-    body << "{";
-    StreamCacheMap::const_iterator it = cache.begin();
-    for (; it != cache.end(); ++it)
+    ssize_t ret = m_connector->WriteAll(buffer, size, writeTimeout);
+    if (ret < 0)
     {
-        body << "\n"
-             << "stream name: " << it->first.c_str() << "\n"
-             << "client num: " << it->second.players.size() << "\n";
+        SIMPLE_LOG("write failed, error: %d", ret);
+        Shutdown();
     }
-    body << "}";
 
-    response.SetStatusCode(HttpResponser::StatusCode_200Ok);
-    response.SetBody(body.str().c_str());
+    return ret;
 }
 
-int main(int argc, char *argv[])
+void RtmpServer::Shutdown()
 {
-    std::cerr << "pid = " << getpid() << std::endl;
-    boost::asio::io_service service;
-    RtmpServer server(service);
-    server.Start();
-    service.run();
-    return 0;
+    m_stop = true;
 }

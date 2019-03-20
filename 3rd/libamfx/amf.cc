@@ -229,6 +229,8 @@ void amf_write(Encoder *enc, const AMFValue &value)
 	case AMF_NULL:
 		amf_write_null(enc);
 		break;
+	default:
+		break;
 	}
 }
 

@@ -181,10 +181,10 @@ public:
     void Dump();
 
 private:
-    RtmpHeaderState EncodeStartMsg(
+    void EncodeStartMsg(
         unsigned int csId, ChunkMsgHeader *msgHeader,
         const ChunkMsgHeader *lastMsgHeader);
-    RtmpHeaderState EncodeInterMsg(
+    void EncodeInterMsg(
         unsigned int csId, const ChunkMsgHeader *msgHeader);
 
     bool IsFmt0(const ChunkMsgHeader *msgHeader,

@@ -2,6 +2,7 @@
 
 int main()
 {
+    /*
     char buff0[3 + 11];
     size_t size = 3 + 11;
 
@@ -16,6 +17,8 @@ int main()
 
     // fmt: 2, csid: 6, timestamp: 67, length: 190, typeId: 9, streamId: 1
     char buff4[] = "\x86\x00\x00\x22";
+
+    */
 
     //RtmpHeaderDecode decoder;
     //RtmpHeaderEncode encoder;

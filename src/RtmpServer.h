@@ -1,27 +1,44 @@
 #ifndef RTMP_SERVER_H
 #define RTMP_SERVER_H
 
+#include "HandShake.h"
+#include "StreamProcess.h"
 #include "DataCache.h"
-#include "TcpServer.h"
-#include "libhttp/HttpDispatch.h"
+
+#include "CoSocket/net/TcpServer.h"
+
+#include <unistd.h>
+#include <string>
+#include <memory>
 
 class RtmpServer
 {
 public:
-    RtmpServer(boost::asio::io_service &service);
+    RtmpServer(TcpServer::ConnectorPtr &connector, DataCache &dataCache);
+    ~RtmpServer();
 
-    void Start();
+    void operator ()();
 
 private:
-    SessionPtr NewSession();
+    bool OnData(const char *buffer, std::size_t bufferLength);
+    void CleanDataCache();
+    void HandleMessage(const PacketContext &packet, const void *info);
+    void Play();
+    ssize_t WriteResponse(const char *buffer, size_t size);
+    void Shutdown();
 
-    void HandleStatus(const HttpRequester &request,
-                      HttpResponser &response);
+    static const int kTimeoutMs = 60000;
 
-    boost::asio::io_service &m_service;
-    DataCache m_dataCache;
-    HttpDispatch m_httpDispatch;
-    TcpServer m_tcpServer;
+    bool m_stop;
+    bool m_playing;
+    int readTimeout;
+    int writeTimeout;
+    TcpServer::ConnectorPtr m_connector;
+    DataCache &m_dataCache;
+    std::unique_ptr<HandShake> m_handShake;
+    std::unique_ptr<StreamProcess> m_streamProcess;
+    AVMessageQueuePtr m_playQueue;
+    std::string m_buffer;
 };
 
 #endif // RTMP_SERVER_H

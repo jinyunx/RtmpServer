@@ -1,11 +1,19 @@
 #ifndef HAND_SHAKE_H
 #define HAND_SHAKE_H
-#include "boost/function.hpp"
-#include <arpa/inet.h>
 
-typedef boost::function<void(const char *, size_t)> OnC0C1;
-typedef boost::function<void(const char *, size_t)> OnS0S1S2;
-typedef boost::function<void(const char *, size_t)> OnC2;
+/*
+    1.Client ----C0+C1---> Server
+    2.Server --S0+S1+S2--> Client
+    3.Client -----C2-----> Server
+*/
+
+#include <arpa/inet.h>
+#include <string.h>
+#include <functional>
+
+typedef std::function<void(const char *, size_t)> OnC0C1;
+typedef std::function<void(const char *, size_t)> OnS0S1S2;
+typedef std::function<void(const char *, size_t)> OnC2;
 
 class HandShake
 {
